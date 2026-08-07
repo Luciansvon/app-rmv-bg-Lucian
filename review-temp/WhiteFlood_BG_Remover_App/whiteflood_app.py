@@ -113,6 +113,8 @@ C = {
     "dim":          "#94a3b8",
     "green":        "#22c55e",
     "green_dark":   "#16a34a",
+    "purple":       "#a855f7",
+    "purple_hover": "#9333ea",
     "red":          "#ef4444",
     "red_hover":    "#dc2626",
 }
@@ -127,9 +129,9 @@ NEIGHBORS_8 = [(-1, -1), (-1, 0), (-1, 1),
 #  Splash Screen & Custom Widgets
 # ═══════════════════════════════════════════════════════════
 
-def show_splash():
+def show_splash(parent):
     """Show a lightweight splash screen while application loads."""
-    splash = ctk.CTk()
+    splash = ctk.CTkToplevel(parent)
     splash.overrideredirect(True)
     splash.geometry("400x200")
     splash.configure(fg_color=C["card_alt"])
@@ -1188,7 +1190,16 @@ class WhiteFloodApp(ctk.CTk):
 
 # ═══════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    splash = show_splash()
     app = WhiteFloodApp()
-    app.after(150, lambda: splash.destroy() if splash.winfo_exists() else None)
+    app.withdraw()
+    splash = show_splash(app)
+
+    def _reveal():
+        try:
+            splash.destroy()
+        except Exception:
+            pass
+        app.deiconify()
+
+    app.after(300, _reveal)
     app.mainloop()
