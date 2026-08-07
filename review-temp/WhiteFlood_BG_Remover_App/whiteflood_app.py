@@ -247,17 +247,53 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
             _rembg_session = None
             _rembg_model_name = None
 
-    if status_cb:
-        status_cb(f"⬇  Mengunduh model AI '{model_name}'… (cuma sekali, mohon tunggu)")
-
     from rembg import new_session
-    _rembg_session = new_session(model_name)
-    _rembg_model_name = model_name
+    max_retries = 3
+    last_err = None
 
-    if status_cb:
-        status_cb(f"✅  Model AI '{model_name}' siap!")
+    for attempt in range(1, max_retries + 1):
+        try:
+            if status_cb:
+                if attempt > 1:
+                    status_cb(f"⬇  Mencoba ulang unduhan model AI '{model_name}' (Percobaan {attempt}/{max_retries})…")
+                else:
+                    status_cb(f"⬇  Mengunduh model AI '{model_name}'… (cuma sekali, mohon tunggu)")
 
-    return _rembg_session
+            _rembg_session = new_session(model_name)
+            _rembg_model_name = model_name
+
+            if status_cb:
+                status_cb(f"✅  Model AI '{model_name}' siap!")
+
+            return _rembg_session
+        except Exception as e:
+            last_err = e
+            if attempt < max_retries:
+                import time
+                time.sleep(1.5)
+
+    err_msg = str(last_err)
+    if any(k in err_msg for k in ("Connection", "RemoteDisconnected", "time out", "timed out", "Disconnected")):
+        raise RuntimeError(
+            f"Koneksi internet terputus saat mengunduh model '{model_name}'.\n\n"
+            f"Silakan pastikan koneksi internet stabil lalu klik 'Preview Ulang' untuk mencoba lagi."
+        )
+    raise RuntimeError(f"Gagal memuat model '{model_name}': {err_msg}")
+
+
+def refine_alpha_mask(alpha_img, edge_smooth=0, erode_size=1):
+    """
+    Community Mask Refinement:
+    1. Erode (shrink) 1px to strip white background color bleed along the outer edge.
+    2. Apply GaussianBlur for smooth anti-aliased edge when requested.
+    """
+    if erode_size > 0:
+        alpha_img = alpha_img.filter(ImageFilter.MinFilter(3))
+
+    if edge_smooth > 0:
+        alpha_img = alpha_img.filter(ImageFilter.GaussianBlur(radius=edge_smooth))
+
+    return alpha_img
 
 
 def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
@@ -280,36 +316,26 @@ def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
 
     session = _get_rembg_session(model_name, status_cb=status_cb)
 
-    # rembg returns RGBA with transparent background.
+    # Use post_process_mask=False so neural network returns continuous smooth alpha
     result = rembg_remove(
         rgba,
         session=session,
-        post_process_mask=True,
+        post_process_mask=False,
         alpha_matting=alpha_matting,
         alpha_matting_foreground_threshold=240,
         alpha_matting_background_threshold=10,
         alpha_matting_erode_size=10,
     )
 
-    # Optional edge smoothing (Default is 0 = Original sharpness).
-    if edge_smooth > 0 and edge_smooth <= 6:
-        arr = np.array(result, dtype=np.uint8)
-        alpha = arr[:, :, 3]
+    arr = np.array(result, dtype=np.uint8)
+    alpha = arr[:, :, 3]
+    alpha_pil = Image.fromarray(alpha, "L")
 
-        alpha_pil = Image.fromarray(alpha, "L")
-        alpha_blur = alpha_pil.filter(
-            ImageFilter.GaussianBlur(radius=edge_smooth)
-        )
-        alpha_b = np.array(alpha_blur)
+    # Apply 1px erode to strip white fringe bleed + optional feathering
+    refined_alpha = refine_alpha_mask(alpha_pil, edge_smooth=edge_smooth, erode_size=1)
+    arr[:, :, 3] = np.array(refined_alpha)
 
-        is_full = alpha == 255
-        is_zero = alpha == 0
-        is_edge = ~is_full & ~is_zero
-        alpha_out = alpha.copy()
-        alpha_out[is_edge] = alpha_b[is_edge]
-        arr[:, :, 3] = alpha_out
-
-        result = Image.fromarray(arr, "RGBA")
+    result = Image.fromarray(arr, "RGBA")
 
     if result.size != original_size:
         raise RuntimeError("Internal error: Ukuran piksel berubah.")
