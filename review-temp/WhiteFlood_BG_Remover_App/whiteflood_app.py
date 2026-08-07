@@ -1,15 +1,15 @@
 """
-WhiteFlood BG Remover v2.2
-Hapus background -> PNG transparan.
-Dua mode:
-  - AI  : pakai rembg (neural network), bisa semua warna background
-  - Flood: flood-fill khusus background putih / near-white
+WhiteFlood BG Remover v2.4.0
+Aplikasi Windows Desktop untuk Menghapus Background Gambar Produk Furnitur (PNG Transparan).
+Non-negotiable rules: Tanpa Crop, Tanpa Resize, Dimensi Asli 100% Dipertahankan.
 """
 
 import os
 import sys
 import threading
 import importlib.util
+import re
+import math
 from pathlib import Path
 from collections import deque
 
@@ -32,7 +32,7 @@ if sys.stderr is None:
 try:
     import ctypes
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-        "whiteflood.bgremover.v2"
+        "whiteflood.bgremover.v2.4"
     )
 except Exception:
     pass
@@ -50,7 +50,18 @@ def is_model_downloaded(model_name):
             return True
     return False
 
-# ── Check if rembg is available (lightweight, no heavy import) ──
+# ── Filename Sanitization for Windows ────────────────────
+def sanitize_filename(name):
+    """Sanitize invalid Windows filename characters."""
+    if not name or not name.strip():
+        return "output"
+    # Replace invalid chars < > : " / \ | ? * with -
+    cleaned = re.sub(r'[<>:"/\\|?*]', '-', name.strip())
+    # Collapse multiple dashes or spaces
+    cleaned = re.sub(r'[\s\-]+', '-', cleaned).strip('.- ')
+    return cleaned if cleaned else "output"
+
+# ── Check if rembg is available (lightweight check) ──────
 REMBG_OK = importlib.util.find_spec("rembg") is not None
 
 # Cache for rembg session (lazy loaded)
@@ -62,32 +73,130 @@ _rembg_model_name = None
 # ═══════════════════════════════════════════════════════════
 
 APP_NAME = "WhiteFlood BG Remover"
-VERSION = "2.2"
+VERSION = "2.4.0"
 
-MODE_AI = "🤖  AI (Semua BG)"
-MODE_FLOOD = "🌊  WhiteFlood (BG Putih)"
+MODE_FURNITURE = "🪑  Furniture Quality"
+MODE_FAST = "⚡  Fast"
+MODE_PERSON = "👤  Person"
+MODE_HIGH_DETAIL = "🔍  High Detail"
+MODE_WHITE = "🌊  White Background"
+
+MODE_MAP = {
+    MODE_FURNITURE: "birefnet-massive",
+    MODE_FAST: "birefnet-general",
+    MODE_PERSON: "birefnet-portrait",
+    MODE_HIGH_DETAIL: "birefnet-hrsod",
+}
+
+MODE_DESC_MAP = {
+    MODE_FURNITURE: "🪑 Furniture Quality (Rekomendasi Utama — Hasil Paling Rapi untuk Produk Furnitur, Kayu, & Katalog)",
+    MODE_FAST: "⚡ Fast (Proses Cepat untuk Gambar Biasa)",
+    MODE_PERSON: "👤 Person (Khusus Foto Orang, Manusia, Pakaian, & Rambut)",
+    MODE_HIGH_DETAIL: "🔍 High Detail (Khusus Resolusi Tinggi & Ukiran Halus)",
+    MODE_WHITE: "🌊 White Background (Instan Tanpa AI / Tanpa Internet untuk Background Polos)",
+}
+
+REFINE_ORIGINAL = "Original (Rekomendasi)"
+REFINE_SOFT = "Soft (Pinggiran Halus)"
+REFINE_ALPHA_MATTE = "Alpha Matte (Deteksi Rambut)"
 
 C = {
-    "bg":           "#0f0f1a",
-    "card":         "#1a1a2e",
-    "card_alt":     "#12121f",
-    "border":       "#2a2a4a",
+    "bg":           "#10101c",
+    "card":         "#18182a",
+    "card_alt":     "#121220",
+    "border":       "#262640",
     "accent":       "#e94560",
     "accent_hover": "#d63851",
-    "blue":         "#0f3460",
-    "blue_hover":   "#163d6b",
-    "text":         "#eaeaea",
-    "dim":          "#8d8d8d",
-    "green":        "#4ade80",
+    "blue":         "#1e3a8a",
+    "blue_hover":   "#1d4ed8",
+    "text":         "#f1f5f9",
+    "dim":          "#94a3b8",
+    "green":        "#22c55e",
     "green_dark":   "#16a34a",
-    "purple":       "#a855f7",
-    "purple_hover": "#9333ea",
+    "red":          "#ef4444",
+    "red_hover":    "#dc2626",
 }
 
 PREVIEW_MAX = (340, 240)
 NEIGHBORS_8 = [(-1, -1), (-1, 0), (-1, 1),
                (0, -1),           (0, 1),
                (1, -1),  (1, 0),  (1, 1)]
+
+
+# ═══════════════════════════════════════════════════════════
+#  Splash Screen & Custom Widgets
+# ═══════════════════════════════════════════════════════════
+
+def show_splash():
+    """Show a lightweight splash screen while application loads."""
+    splash = ctk.CTk()
+    splash.overrideredirect(True)
+    splash.geometry("400x200")
+    splash.configure(fg_color=C["card_alt"])
+
+    # Center splash on screen
+    try:
+        ws = splash.winfo_screenwidth()
+        hs = splash.winfo_screenheight()
+        x = max(0, (ws // 2) - 200)
+        y = max(0, (hs // 2) - 100)
+        splash.geometry(f"400x200+{x}+{y}")
+    except Exception:
+        pass
+
+    lbl_title = ctk.CTkLabel(
+        splash, text="◆  WhiteFlood BG Remover",
+        font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
+        text_color=C["accent"],
+    )
+    lbl_title.pack(pady=(45, 6))
+
+    lbl_sub = ctk.CTkLabel(
+        splash, text=f"Memuat aplikasi v{VERSION}...",
+        font=ctk.CTkFont(size=12), text_color=C["dim"],
+    )
+    lbl_sub.pack(pady=(0, 20))
+
+    progress = ctk.CTkProgressBar(splash, width=300, height=4, progress_color=C["accent"])
+    progress.pack()
+    progress.configure(mode="indeterminate")
+    progress.start()
+
+    splash.update()
+    return splash
+
+
+class LoadingSpinner(ctk.CTkCanvas):
+    """Clean animated circular spinner for processing feedback."""
+    def __init__(self, parent, size=50, color=C["accent"], bg_color=C["card_alt"]):
+        super().__init__(parent, width=size, height=size, bg=bg_color, highlightthickness=0)
+        self.size = size
+        self.color = color
+        self.bg_color = bg_color
+        self.angle = 0
+        self.running = False
+
+    def start(self):
+        if not self.running:
+            self.running = True
+            self._animate()
+
+    def stop(self):
+        self.running = False
+
+    def _animate(self):
+        if not self.running:
+            return
+        self.delete("all")
+        margin = 6
+        extent = 100
+        self.create_arc(
+            margin, margin, self.size - margin, self.size - margin,
+            start=self.angle, extent=extent,
+            style="arc", outline=self.color, width=4
+        )
+        self.angle = (self.angle + 12) % 360
+        self.after(30, self._animate)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -115,44 +224,51 @@ def metadata_for_save(img):
 
 
 # ═══════════════════════════════════════════════════════════
-#  AI Background Removal  (rembg / U2-Net)
+#  AI Background Removal  (rembg / BiRefNet / U2-Net)
 # ═══════════════════════════════════════════════════════════
 
 def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
-    """Lazy-load rembg and cache the session. Only imports on first call."""
+    """Lazy-load rembg and cache session. Automatically frees old model RAM when switching."""
     global _rembg_session, _rembg_model_name
 
-    if _rembg_session is not None and _rembg_model_name == model_name:
-        return _rembg_session
+    if _rembg_session is not None:
+        if _rembg_model_name == model_name:
+            return _rembg_session
+        else:
+            # Model changed: explicitly release previous session to prevent RAM accumulation
+            try:
+                del _rembg_session
+                import gc
+                gc.collect()
+            except Exception:
+                pass
+            _rembg_session = None
+            _rembg_model_name = None
 
     if status_cb:
-        status_cb(f"⬇  Mengunduh model '{model_name}'… (cuma sekali, sabar ya)")
+        status_cb(f"⬇  Mengunduh model AI '{model_name}'… (cuma sekali, mohon tunggu)")
 
     from rembg import new_session
     _rembg_session = new_session(model_name)
     _rembg_model_name = model_name
 
     if status_cb:
-        status_cb(f"✅  Model '{model_name}' siap!")
+        status_cb(f"✅  Model AI '{model_name}' siap!")
 
     return _rembg_session
 
 
-def ai_remove_bg(img, edge_smooth=2, model_name="birefnet-massive",
+def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
                  alpha_matting=False, status_cb=None):
     """
     Remove background using rembg (neural network).
     Works on ANY background color.
-    First call downloads the model (cached afterwards).
     Pixel dimensions are NEVER changed.
-
-    model_name: "u2net", "isnet-general-use", or "birefnet-general"
-    alpha_matting: if True, uses alpha matting for smoother edges
     """
     if not REMBG_OK:
         raise RuntimeError(
-            "Library 'rembg' belum terinstall.\n"
-            "Jalankan: pip install rembg[cpu]"
+            "Pustaka 'rembg' belum terinstall.\n"
+            "Silakan install dengan: pip install rembg[cpu]"
         )
 
     from rembg import remove as rembg_remove
@@ -173,19 +289,17 @@ def ai_remove_bg(img, edge_smooth=2, model_name="birefnet-massive",
         alpha_matting_erode_size=10,
     )
 
-    # Optional edge smoothing.
+    # Optional edge smoothing (Default is 0 = Original sharpness).
     if edge_smooth > 0 and edge_smooth <= 6:
         arr = np.array(result, dtype=np.uint8)
         alpha = arr[:, :, 3]
 
-        # Only blur at edges (where alpha transitions from 0 to 255).
         alpha_pil = Image.fromarray(alpha, "L")
         alpha_blur = alpha_pil.filter(
             ImageFilter.GaussianBlur(radius=edge_smooth)
         )
         alpha_b = np.array(alpha_blur)
 
-        # Blend: keep interior alpha, smooth edge alpha.
         is_full = alpha == 255
         is_zero = alpha == 0
         is_edge = ~is_full & ~is_zero
@@ -196,7 +310,7 @@ def ai_remove_bg(img, edge_smooth=2, model_name="birefnet-massive",
         result = Image.fromarray(arr, "RGBA")
 
     if result.size != original_size:
-        raise RuntimeError("Internal error: output dimensions changed.")
+        raise RuntimeError("Internal error: Ukuran piksel berubah.")
     return result
 
 
@@ -205,7 +319,7 @@ def ai_remove_bg(img, edge_smooth=2, model_name="birefnet-massive",
 # ═══════════════════════════════════════════════════════════
 
 def flood_remove_bg(img, threshold=220, fringe=30,
-                    edge_smooth=2, aggressive=False):
+                    edge_smooth=0, aggressive=False):
     """
     Remove near-white background connected to image borders.
     Pixel dimensions are NEVER changed.
@@ -317,31 +431,31 @@ def flood_remove_bg(img, threshold=220, fringe=30,
     arr[:, :, 3] = new_alpha.astype(np.uint8)
     result = Image.fromarray(arr, "RGBA")
     if result.size != original_size:
-        raise RuntimeError("Internal error: output dimensions changed.")
+        raise RuntimeError("Internal error: Ukuran piksel berubah.")
     return result
 
 
 def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
-                 model_name="u2net", alpha_matting=False):
-    """Process a single file end-to-end."""
+                 model_name="birefnet-massive", alpha_matting=False):
+    """Process a single file end-to-end preserving pixel dimensions."""
     src, dst = Path(src), Path(dst)
     with Image.open(src) as img:
         original_size = img.size
         meta = metadata_for_save(img)
 
-        if mode == MODE_AI:
+        if mode == MODE_WHITE:
+            result = flood_remove_bg(
+                img, threshold, fringe, edge_smooth, aggressive,
+            )
+        else:
             result = ai_remove_bg(
                 img, edge_smooth=edge_smooth,
                 model_name=model_name, alpha_matting=alpha_matting,
             )
-        else:
-            result = flood_remove_bg(
-                img, threshold, fringe, edge_smooth, aggressive,
-            )
 
         if result.size != original_size:
             raise RuntimeError(
-                f"Resolution changed: {original_size} -> {result.size}"
+                f"Resolusi berubah: {original_size} -> {result.size}"
             )
         dst.parent.mkdir(parents=True, exist_ok=True)
         result.save(dst, format="PNG", optimize=False, **meta)
@@ -349,7 +463,7 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
         with Image.open(dst) as check:
             if check.size != original_size:
                 raise RuntimeError(
-                    f"Saved resolution mismatch: {original_size} -> {check.size}"
+                    f"Mismatch resolusi tersimpan: {original_size} -> {check.size}"
                 )
 
 
@@ -363,25 +477,24 @@ class WhiteFloodApp(ctk.CTk):
         super().__init__()
         ctk.set_appearance_mode("dark")
 
-        self.title(APP_NAME)
-        self.geometry("920x780")
-        self.minsize(860, 720)
+        self.title(f"{APP_NAME} v{VERSION}")
+        self.geometry("940x820")
+        self.minsize(880, 740)
         self.configure(fg_color=C["bg"])
 
         # ── Set window icon ──
         self._set_app_icon()
 
-        # State
-        self.mode_var = ctk.StringVar(value=MODE_AI if REMBG_OK else MODE_FLOOD)
+        # State Variables
+        self.mode_var = ctk.StringVar(value=MODE_FURNITURE)
+        self.refine_var = ctk.StringVar(value=REFINE_ORIGINAL)
         self.threshold_var = ctk.IntVar(value=220)
         self.fringe_var = ctk.IntVar(value=30)
-        self.smooth_var = ctk.IntVar(value=2)
         self.aggressive_var = ctk.BooleanVar(value=False)
-        self.model_var = ctk.StringVar(value="birefnet-massive")
-        self.alpha_matting_var = ctk.BooleanVar(value=False)
         self.output_dir = ctk.StringVar(value="")
+        self.batch_name_var = ctk.StringVar(value="kursi-panjang")
         self.status_text = ctk.StringVar(
-            value="Siap. Ukuran piksel output selalu = input."
+            value="Siap. Ukuran piksel output selalu 100% sama dengan input."
         )
 
         self._src_path = None
@@ -389,6 +502,7 @@ class WhiteFloodApp(ctk.CTk):
         self._original_meta = {}
         self._result = None
         self._processing = False
+        self._batch_cancelled = False
 
         self._img_before = None
         self._img_after = None
@@ -396,8 +510,7 @@ class WhiteFloodApp(ctk.CTk):
         self._build_ui()
 
     def _set_app_icon(self):
-        """Set the window icon from logo.ico or logo.png."""
-        # Support PyInstaller bundled path.
+        """Set window icon from logo.ico or logo.png."""
         if getattr(sys, "frozen", False):
             base = Path(sys._MEIPASS)
         else:
@@ -412,7 +525,6 @@ class WhiteFloodApp(ctk.CTk):
                     self.iconbitmap(default=str(ico_path))
                     self.iconbitmap(str(ico_path))
 
-                    # Direct Win32 WM_SETICON call to force Windows taskbar icon
                     try:
                         hwnd = self.winfo_id()
                         WM_SETICON = 0x0080
@@ -435,12 +547,11 @@ class WhiteFloodApp(ctk.CTk):
                         resized = icon_img.copy()
                         resized = resized.resize((s, s), Image.LANCZOS)
                         sizes.append(ImageTk.PhotoImage(resized))
-                    self._app_icons = sizes  # keep reference!
+                    self._app_icons = sizes
                     self.iconphoto(True, *sizes)
             except Exception:
                 pass
 
-        # Delay icon setting to ensure window is fully initialized
         self.after(100, _apply_icon)
 
     # ───────────────────────────────────────
@@ -456,265 +567,255 @@ class WhiteFloodApp(ctk.CTk):
         root.pack(fill="both", expand=True)
 
         main = ctk.CTkFrame(root, fg_color="transparent")
-        main.pack(fill="both", expand=True, padx=26, pady=18)
+        main.pack(fill="both", expand=True, padx=24, pady=16)
 
-        # ── Title ──
+        # ── Header Title ──
         tf = ctk.CTkFrame(main, fg_color="transparent")
-        tf.pack(fill="x", pady=(0, 4))
+        tf.pack(fill="x", pady=(0, 2))
 
         ctk.CTkLabel(
-            tf, text="◆  WhiteFlood",
-            font=ctk.CTkFont(family="Segoe UI", size=26, weight="bold"),
+            tf, text="◆ WhiteFlood",
+            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
             text_color=C["accent"],
         ).pack(side="left")
         ctk.CTkLabel(
             tf, text="BG Remover",
-            font=ctk.CTkFont(family="Segoe UI", size=26, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
             text_color=C["text"],
         ).pack(side="left", padx=(6, 0))
         ctk.CTkLabel(
             tf, text=f"v{VERSION}",
             font=ctk.CTkFont(size=11), text_color=C["dim"],
-        ).pack(side="left", padx=(10, 0), pady=(10, 0))
+        ).pack(side="left", padx=(8, 0), pady=(8, 0))
 
         ctk.CTkLabel(
             main,
-            text="Hapus background → PNG transparan.  Tanpa resize, tanpa crop.",
-            font=ctk.CTkFont(size=13), text_color=C["dim"],
-        ).pack(anchor="w", pady=(0, 16))
-
-        # ── Mode Selector ─────────────────
-        mode_card = self._card(main, "MODE")
-
-        mode_frame = ctk.CTkFrame(mode_card, fg_color="transparent")
-        mode_frame.pack(fill="x", padx=18, pady=(0, 16))
-
-        modes = [MODE_AI, MODE_FLOOD]
-        if not REMBG_OK:
-            modes = [MODE_FLOOD]
-
-        self.mode_seg = ctk.CTkSegmentedButton(
-            mode_frame,
-            values=modes,
-            variable=self.mode_var,
-            command=self._on_mode_change,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=C["border"],
-            selected_color=C["accent"],
-            selected_hover_color=C["accent_hover"],
-            unselected_color=C["card"],
-            unselected_hover_color=C["border"],
-            corner_radius=10,
-            height=40,
-        )
-        self.mode_seg.pack(fill="x")
-
-        if not REMBG_OK:
-            ctk.CTkLabel(
-                mode_frame,
-                text="⚠  Mode AI tidak tersedia. Install: pip install rembg[cpu]",
-                text_color="#fbbf24", font=ctk.CTkFont(size=11),
-            ).pack(anchor="w", pady=(8, 0))
-
-        self.mode_desc = ctk.CTkLabel(
-            mode_frame, text="", font=ctk.CTkFont(size=11),
-            text_color=C["dim"], wraplength=800, justify="left",
-        )
-        self.mode_desc.pack(anchor="w", pady=(8, 0))
-        self._update_mode_desc()
+            text="Aplikasi Pemotong Background Foto Produk Furnitur. Tanpa Resize, Tanpa Crop.",
+            font=ctk.CTkFont(size=12), text_color=C["dim"],
+        ).pack(anchor="w", pady=(0, 14))
 
         # ── Preview Card ──────────────────
-        prev_card = self._card(main, "PREVIEW")
+        prev_card = self._card(main, "PREVIEW GAMBAR")
 
         prev_row = ctk.CTkFrame(prev_card, fg_color="transparent")
-        prev_row.pack(fill="x", padx=18, pady=(0, 16))
+        prev_row.pack(fill="x", padx=16, pady=(0, 14))
         prev_row.columnconfigure(0, weight=1)
         prev_row.columnconfigure(1, weight=1)
 
-        bf = ctk.CTkFrame(prev_row, fg_color=C["card_alt"], corner_radius=10, height=280)
+        # Original Preview Box
+        bf = ctk.CTkFrame(prev_row, fg_color=C["card_alt"], corner_radius=10, height=270)
         bf.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         bf.pack_propagate(False)
-        ctk.CTkLabel(bf, text="ORIGINAL", font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"]).pack(pady=(10, 4))
+        ctk.CTkLabel(bf, text="GAMBAR ASLI", font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"]).pack(pady=(8, 2))
         self.lbl_before = ctk.CTkLabel(bf, text="Belum ada gambar", text_color=C["dim"], font=ctk.CTkFont(size=12))
         self.lbl_before.pack(expand=True)
 
-        af = ctk.CTkFrame(prev_row, fg_color=C["card_alt"], corner_radius=10, height=280)
+        # Result Preview Box
+        af = ctk.CTkFrame(prev_row, fg_color=C["card_alt"], corner_radius=10, height=270)
         af.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         af.pack_propagate(False)
-        ctk.CTkLabel(af, text="HASIL", font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"]).pack(pady=(10, 4))
+        ctk.CTkLabel(af, text="HASIL TRANSPARAN", font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"]).pack(pady=(8, 2))
+        
         self.lbl_after = ctk.CTkLabel(af, text="Belum diproses", text_color=C["dim"], font=ctk.CTkFont(size=12))
         self.lbl_after.pack(expand=True)
 
-        # ── Settings Card ─────────────────
-        self.settings_card = self._card(main, "PENGATURAN")
-
-        self.settings_grid = ctk.CTkFrame(self.settings_card, fg_color="transparent")
-        self.settings_grid.pack(fill="x", padx=18, pady=(0, 16))
-        self.settings_grid.columnconfigure(1, weight=1)
-
-        # Edge Smoothing (shared between modes)
-        self._add_slider(self.settings_grid, 0, "Edge Smoothing", 0, 6, self.smooth_var, self._on_smooth)
-
-        # ── AI-specific settings ──
-        self.ai_widgets = []
-
-        lbl_model = ctk.CTkLabel(
-            self.settings_grid, text="Model AI",
-            text_color=C["text"], font=ctk.CTkFont(size=13),
+        # Spinner Frame (Overlay when processing)
+        self.spinner_frame = ctk.CTkFrame(af, fg_color="transparent")
+        self.spinner = LoadingSpinner(self.spinner_frame, size=48, color=C["accent"], bg_color=C["card_alt"])
+        self.spinner.pack(pady=(0, 8))
+        self.spinner_label = ctk.CTkLabel(
+            self.spinner_frame, text="Menghapus background...",
+            font=ctk.CTkFont(size=12, weight="bold"), text_color=C["accent"]
         )
-        lbl_model.grid(row=1, column=0, sticky="w", pady=(14, 0))
+        self.spinner_label.pack()
 
-        self.model_dropdown = ctk.CTkOptionMenu(
-            self.settings_grid,
-            values=[
-                "birefnet-massive",
-                "birefnet-general",
-                "birefnet-portrait",
-                "birefnet-hrsod",
-                "isnet-general-use",
-                "bria-rmbg",
-                "u2net",
-            ],
-            variable=self.model_var,
+        # ── Mode & Settings Card ─────────
+        settings_card = self._card(main, "PENGATURAN MODE PROSES")
+
+        sg = ctk.CTkFrame(settings_card, fg_color="transparent")
+        sg.pack(fill="x", padx=16, pady=(0, 14))
+        sg.columnconfigure(1, weight=1)
+
+        # 1. Mode Dropdown
+        ctk.CTkLabel(sg, text="Mode Proses", text_color=C["text"], font=ctk.CTkFont(size=13, weight="bold")).grid(row=0, column=0, sticky="w")
+        
+        modes = [MODE_FURNITURE, MODE_FAST, MODE_PERSON, MODE_HIGH_DETAIL, MODE_WHITE]
+        self.mode_dropdown = ctk.CTkOptionMenu(
+            sg, values=modes, variable=self.mode_var,
+            command=self._on_mode_change,
             fg_color=C["card_alt"], button_color=C["accent"],
             button_hover_color=C["accent_hover"],
             dropdown_fg_color=C["card"], dropdown_hover_color=C["border"],
-            dropdown_text_color=C["text"],
-            text_color=C["text"], font=ctk.CTkFont(size=12),
-            corner_radius=8, height=32,
+            dropdown_text_color=C["text"], text_color=C["text"],
+            font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, height=34,
         )
-        self.model_dropdown.grid(row=1, column=1, columnspan=2, sticky="ew", padx=16, pady=(14, 0))
-        self.ai_widgets.extend([lbl_model, self.model_dropdown])
+        self.model_dropdown = self.mode_dropdown # alias
+        self.mode_dropdown.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(14, 0))
 
-        lbl_model_hint = ctk.CTkLabel(
-            self.settings_grid,
-            text="⭐ massive = terbaik  |  portrait = foto orang  |  hrsod = resolusi tinggi",
-            text_color=C["dim"], font=ctk.CTkFont(size=10),
+        # Mode Description
+        self.mode_desc = ctk.CTkLabel(
+            sg, text="", font=ctk.CTkFont(size=11),
+            text_color=C["dim"], wraplength=800, justify="left",
         )
-        lbl_model_hint.grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
-        self.ai_widgets.append(lbl_model_hint)
+        self.mode_desc.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 10))
+        self._update_mode_desc()
 
-        self.alpha_matting_cb = ctk.CTkCheckBox(
-            self.settings_grid,
-            text="Alpha Matting (pinggiran lebih halus, cocok untuk rambut/detail)",
-            variable=self.alpha_matting_var, font=ctk.CTkFont(size=12),
-            text_color=C["text"], fg_color=C["purple"],
-            hover_color=C["purple_hover"], border_color=C["border"],
-            corner_radius=4,
+        # 2. Edge Refinement Dropdown
+        self.lbl_refine = ctk.CTkLabel(sg, text="Ketajaman Tepi", text_color=C["text"], font=ctk.CTkFont(size=13))
+        self.lbl_refine.grid(row=2, column=0, sticky="w", pady=(4, 0))
+        
+        self.refine_dropdown = ctk.CTkOptionMenu(
+            sg, values=[REFINE_ORIGINAL, REFINE_SOFT, REFINE_ALPHA_MATTE],
+            variable=self.refine_var,
+            fg_color=C["card_alt"], button_color=C["blue"],
+            button_hover_color=C["blue_hover"],
+            dropdown_fg_color=C["card"], dropdown_hover_color=C["border"],
+            dropdown_text_color=C["text"], text_color=C["text"],
+            font=ctk.CTkFont(size=12), corner_radius=8, height=32,
         )
-        self.alpha_matting_cb.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        self.ai_widgets.append(self.alpha_matting_cb)
+        self.refine_dropdown.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(14, 0), pady=(4, 0))
 
-        # ── WhiteFlood-specific settings ──
+        # 3. WhiteFlood Specific Settings
         self.flood_widgets = []
 
-        lbl_t = ctk.CTkLabel(self.settings_grid, text="White Threshold", text_color=C["text"], font=ctk.CTkFont(size=13))
-        lbl_t.grid(row=4, column=0, sticky="w", pady=(14, 0))
+        lbl_t = ctk.CTkLabel(sg, text="White Threshold", text_color=C["text"], font=ctk.CTkFont(size=13))
+        lbl_t.grid(row=3, column=0, sticky="w", pady=(10, 0))
         sl_t = ctk.CTkSlider(
-            self.settings_grid, from_=180, to=254, variable=self.threshold_var,
+            sg, from_=180, to=254, variable=self.threshold_var,
             fg_color=C["border"], progress_color=C["accent"],
             button_color=C["accent"], button_hover_color=C["accent_hover"],
             command=self._on_threshold,
         )
-        sl_t.grid(row=4, column=1, sticky="ew", padx=16, pady=(14, 0))
+        sl_t.grid(row=3, column=1, sticky="ew", padx=14, pady=(10, 0))
         self._lbl_white_threshold = ctk.CTkLabel(
-            self.settings_grid, text="220", width=36,
+            sg, text="220", width=36,
             text_color=C["accent"], font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self._lbl_white_threshold.grid(row=4, column=2, pady=(14, 0))
+        self._lbl_white_threshold.grid(row=3, column=2, pady=(10, 0))
         self.flood_widgets.extend([lbl_t, sl_t, self._lbl_white_threshold])
 
-        lbl_f = ctk.CTkLabel(self.settings_grid, text="Fringe Cleanup", text_color=C["text"], font=ctk.CTkFont(size=13))
-        lbl_f.grid(row=5, column=0, sticky="w", pady=(14, 0))
+        lbl_f = ctk.CTkLabel(sg, text="Fringe Cleanup", text_color=C["text"], font=ctk.CTkFont(size=13))
+        lbl_f.grid(row=4, column=0, sticky="w", pady=(10, 0))
         sl_f = ctk.CTkSlider(
-            self.settings_grid, from_=0, to=80, variable=self.fringe_var,
+            sg, from_=0, to=80, variable=self.fringe_var,
             fg_color=C["border"], progress_color=C["accent"],
             button_color=C["accent"], button_hover_color=C["accent_hover"],
             command=self._on_fringe,
         )
-        sl_f.grid(row=5, column=1, sticky="ew", padx=16, pady=(14, 0))
+        sl_f.grid(row=4, column=1, sticky="ew", padx=14, pady=(10, 0))
         self._lbl_fringe_cleanup = ctk.CTkLabel(
-            self.settings_grid, text="30", width=36,
+            sg, text="30", width=36,
             text_color=C["accent"], font=ctk.CTkFont(size=13, weight="bold"),
         )
-        self._lbl_fringe_cleanup.grid(row=5, column=2, pady=(14, 0))
+        self._lbl_fringe_cleanup.grid(row=4, column=2, pady=(10, 0))
         self.flood_widgets.extend([lbl_f, sl_f, self._lbl_fringe_cleanup])
 
         self.aggressive_cb = ctk.CTkCheckBox(
-            self.settings_grid,
-            text="Mode Agresif (untuk background bergradasi / shadow)",
+            sg, text="Mode Agresif (untuk background bergradasi / shadow)",
             variable=self.aggressive_var, font=ctk.CTkFont(size=12),
             text_color=C["text"], fg_color=C["accent"],
             hover_color=C["accent_hover"], border_color=C["border"],
             corner_radius=4,
         )
-        self.aggressive_cb.grid(row=6, column=0, columnspan=3, sticky="w", pady=(16, 0))
+        self.aggressive_cb.grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
         self.flood_widgets.append(self.aggressive_cb)
 
-        # Apply initial visibility.
         self._toggle_flood_settings()
 
-        # ── Actions Card ──────────────────
-        act_card = self._card(main, "PROSES")
+        # ── Single Actions Card ────────────
+        act_card = self._card(main, "PROSES GAMBAR TUNGGAL")
 
         btn_row = ctk.CTkFrame(act_card, fg_color="transparent")
-        btn_row.pack(fill="x", padx=18)
+        btn_row.pack(fill="x", padx=16, pady=(0, 14))
         btn_row.columnconfigure((0, 1, 2), weight=1)
 
         self.btn_pick = ctk.CTkButton(
-            btn_row, text="🖼  Pilih Gambar", command=self.load_and_process,
+            btn_row, text="Pilih Gambar", command=self.load_and_process,
             fg_color=C["accent"], hover_color=C["accent_hover"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=42, corner_radius=10,
+            font=ctk.CTkFont(size=13, weight="bold"), height=40, corner_radius=8,
         )
         self.btn_pick.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
         self.btn_repreview = ctk.CTkButton(
-            btn_row, text="🔄  Preview Ulang", command=self.repreview,
+            btn_row, text="Preview Ulang", command=self.repreview,
             fg_color=C["blue"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=42, corner_radius=10,
+            font=ctk.CTkFont(size=13, weight="bold"), height=40, corner_radius=8,
             state="disabled",
         )
         self.btn_repreview.grid(row=0, column=1, sticky="ew", padx=4)
 
         self.btn_save = ctk.CTkButton(
-            btn_row, text="💾  Simpan Hasil", command=self.save_result,
+            btn_row, text="Simpan Hasil", command=self.save_result,
             fg_color=C["border"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=42, corner_radius=10,
+            font=ctk.CTkFont(size=13, weight="bold"), height=40, corner_radius=8,
             state="disabled",
         )
         self.btn_save.grid(row=0, column=2, sticky="ew", padx=(4, 0))
 
-        # Batch
-        batch_row = ctk.CTkFrame(act_card, fg_color="transparent")
-        batch_row.pack(fill="x", padx=18, pady=(10, 0))
+        # ── Batch Card ────────────────────
+        batch_card = self._card(main, "PROSES BATCH (BANYAK GAMBAR)")
 
-        self.btn_batch = ctk.CTkButton(
-            batch_row, text="📁  Batch 1 Folder", command=self.process_folder,
-            fg_color=C["blue"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=40, corner_radius=10,
-        )
-        self.btn_batch.pack(fill="x")
+        bg_frame = ctk.CTkFrame(batch_card, fg_color="transparent")
+        bg_frame.pack(fill="x", padx=16, pady=(0, 14))
+        bg_frame.columnconfigure(1, weight=1)
 
-        out_row = ctk.CTkFrame(act_card, fg_color="transparent")
-        out_row.pack(fill="x", padx=18, pady=(10, 16))
-        ctk.CTkLabel(out_row, text="Folder Output Batch:", text_color=C["dim"], font=ctk.CTkFont(size=12)).pack(side="left")
-        ctk.CTkEntry(
-            out_row, textvariable=self.output_dir,
+        # Batch Name Entry
+        ctk.CTkLabel(bg_frame, text="Nama Batch", text_color=C["text"], font=ctk.CTkFont(size=12, weight="bold")).grid(row=0, column=0, sticky="w")
+        self.entry_batch_name = ctk.CTkEntry(
+            bg_frame, textvariable=self.batch_name_var,
             fg_color=C["card_alt"], border_color=C["border"],
             text_color=C["text"], font=ctk.CTkFont(size=12), height=32,
-        ).pack(side="left", fill="x", expand=True, padx=(8, 8))
+        )
+        self.entry_batch_name.grid(row=0, column=1, sticky="ew", padx=12)
+        self.entry_batch_name.bind("<KeyRelease>", self._update_batch_preview)
+
+        # Output Folder Entry
+        ctk.CTkLabel(bg_frame, text="Folder Output", text_color=C["dim"], font=ctk.CTkFont(size=12)).grid(row=1, column=0, sticky="w", pady=(10, 0))
+        ctk.CTkEntry(
+            bg_frame, textvariable=self.output_dir,
+            fg_color=C["card_alt"], border_color=C["border"],
+            text_color=C["text"], font=ctk.CTkFont(size=12), height=32,
+        ).grid(row=1, column=1, sticky="ew", padx=12, pady=(10, 0))
         ctk.CTkButton(
-            out_row, text="Pilih…", width=70, height=32,
+            bg_frame, text="Pilih...", width=70, height=32,
             fg_color=C["border"], hover_color=C["blue"],
             command=self._choose_output, corner_radius=8,
-        ).pack(side="left")
+        ).grid(row=1, column=2, pady=(10, 0))
 
-        # ── Progress & Status ─────────────
+        # Batch Naming Preview
+        self.lbl_batch_preview = ctk.CTkLabel(
+            bg_frame, text="Contoh hasil: kursi-panjang-1.png, kursi-panjang-2.png...",
+            font=ctk.CTkFont(size=11), text_color=C["dim"], anchor="w"
+        )
+        self.lbl_batch_preview.grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 10))
+
+        # Batch Action Buttons
+        b_btns = ctk.CTkFrame(bg_frame, fg_color="transparent")
+        b_btns.grid(row=3, column=0, columnspan=3, sticky="ew")
+        b_btns.columnconfigure(0, weight=3)
+        b_btns.columnconfigure(1, weight=1)
+
+        self.btn_batch = ctk.CTkButton(
+            b_btns, text="Start Batch (Pilih Folder Asal)", command=self.process_folder,
+            fg_color=C["blue"], hover_color=C["blue_hover"],
+            font=ctk.CTkFont(size=13, weight="bold"), height=38, corner_radius=8,
+        )
+        self.btn_batch.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        self.btn_cancel_batch = ctk.CTkButton(
+            b_btns, text="Batal Batch", command=self.cancel_batch,
+            fg_color=C["border"], hover_color=C["red_hover"],
+            font=ctk.CTkFont(size=12, weight="bold"), height=38, corner_radius=8,
+            state="disabled",
+        )
+        self.btn_cancel_batch.grid(row=0, column=1, sticky="ew")
+
+        # ── Progress & Status Footer ──────
         self.progress = ctk.CTkProgressBar(
             main, fg_color=C["border"], progress_color=C["accent"],
             height=6, corner_radius=3,
         )
-        self.progress.pack(fill="x", pady=(4, 8))
+        self.progress.pack(fill="x", pady=(4, 6))
         self.progress.set(0)
 
         ctk.CTkLabel(
@@ -728,77 +829,64 @@ class WhiteFloodApp(ctk.CTk):
 
     def _card(self, parent, label):
         card = ctk.CTkFrame(
-            parent, fg_color=C["card"], corner_radius=14,
+            parent, fg_color=C["card"], corner_radius=12,
             border_width=1, border_color=C["border"],
         )
         card.pack(fill="x", pady=(0, 12))
         ctk.CTkLabel(
             card, text=label,
             font=ctk.CTkFont(size=11, weight="bold"), text_color=C["dim"],
-        ).pack(anchor="w", padx=18, pady=(14, 8))
+        ).pack(anchor="w", padx=16, pady=(12, 6))
         return card
 
-    def _add_slider(self, parent, row, label, lo, hi, var, cb):
-        pad_top = (14, 0) if row > 0 else 0
-        ctk.CTkLabel(parent, text=label, text_color=C["text"], font=ctk.CTkFont(size=13)).grid(row=row, column=0, sticky="w", pady=pad_top)
-        ctk.CTkSlider(
-            parent, from_=lo, to=hi, variable=var,
-            fg_color=C["border"], progress_color=C["accent"],
-            button_color=C["accent"], button_hover_color=C["accent_hover"],
-            command=cb,
-        ).grid(row=row, column=1, sticky="ew", padx=16, pady=pad_top)
-        lbl = ctk.CTkLabel(parent, text=str(var.get()), width=36, text_color=C["accent"], font=ctk.CTkFont(size=13, weight="bold"))
-        lbl.grid(row=row, column=2, pady=pad_top)
-        setattr(self, f"_lbl_{label.lower().replace(' ', '_')}", lbl)
-
-    # ── Slider callbacks ──
     def _on_threshold(self, v):
         v = round(float(v)); self.threshold_var.set(v); self._lbl_white_threshold.configure(text=str(v))
 
     def _on_fringe(self, v):
         v = round(float(v)); self.fringe_var.set(v); self._lbl_fringe_cleanup.configure(text=str(v))
 
-    def _on_smooth(self, v):
-        v = round(float(v)); self.smooth_var.set(v); self._lbl_edge_smoothing.configure(text=str(v))
-
     def _choose_output(self):
-        folder = filedialog.askdirectory(title="Pilih folder output")
+        folder = filedialog.askdirectory(title="Pilih folder output batch")
         if folder:
             self.output_dir.set(folder)
 
-    # ── Mode toggle ──
+    def _update_batch_preview(self, _=None):
+        name = sanitize_filename(self.batch_name_var.get())
+        self.lbl_batch_preview.configure(
+            text=f"Contoh hasil: {name}-1.png, {name}-2.png, {name}-3.png..."
+        )
+
     def _on_mode_change(self, _=None):
         self._toggle_flood_settings()
         self._update_mode_desc()
 
     def _update_mode_desc(self):
         mode = self.mode_var.get()
-        if mode == MODE_AI:
-            self.mode_desc.configure(
-                text="AI menggunakan neural network untuk mendeteksi objek. "
-                     "Bisa hapus background warna apapun. "
-                     "Pilih model di Pengaturan. Model diunduh otomatis saat pertama dipakai."
-            )
-        else:
-            self.mode_desc.configure(
-                text="WhiteFlood menggunakan flood-fill dari tepi gambar. "
-                     "Hanya untuk background putih / near-white / abu-abu muda."
-            )
+        desc = MODE_DESC_MAP.get(mode, "")
+        self.mode_desc.configure(text=desc)
 
     def _toggle_flood_settings(self):
-        is_ai = self.mode_var.get() == MODE_AI
-        # Show/hide AI widgets
-        for w in self.ai_widgets:
-            if is_ai:
+        is_flood = self.mode_var.get() == MODE_WHITE
+        # Refinement option only for AI
+        if is_flood:
+            self.lbl_refine.grid_remove()
+            self.refine_dropdown.grid_remove()
+            for w in self.flood_widgets:
                 w.grid()
-            else:
+        else:
+            self.lbl_refine.grid()
+            self.refine_dropdown.grid()
+            for w in self.flood_widgets:
                 w.grid_remove()
-        # Show/hide Flood widgets
-        for w in self.flood_widgets:
-            if not is_ai:
-                w.grid()
-            else:
-                w.grid_remove()
+
+    def _get_refinement_params(self):
+        r = self.refine_var.get()
+        if r == REFINE_SOFT:
+            return 2, False
+        elif r == REFINE_ALPHA_MATTE:
+            return 0, True
+        else: # REFINE_ORIGINAL
+            return 0, False
 
     def _show_preview(self, original, result):
         thumb_b = original.copy()
@@ -814,7 +902,6 @@ class WhiteFloodApp(ctk.CTk):
         self.lbl_after.configure(image=self._img_after, text="")
 
     def _set_buttons(self, state):
-        """Enable / disable action buttons."""
         self.btn_pick.configure(state=state)
         self.btn_batch.configure(state=state)
         if state == "disabled":
@@ -822,18 +909,18 @@ class WhiteFloodApp(ctk.CTk):
             self.btn_save.configure(state="disabled")
 
     # ───────────────────────────────────────
-    #  Single-image workflow  (threaded)
+    #  Single-Image Workflow
     # ───────────────────────────────────────
 
     def load_and_process(self):
         src = filedialog.askopenfilename(
-            title="Pilih gambar",
+            title="Pilih gambar produk",
             filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All", "*.*")],
         )
         if not src:
             return
         self._src_path = src
-        self._original = None          # force reload
+        self._original = None
         self._do_process()
 
     def repreview(self):
@@ -848,13 +935,14 @@ class WhiteFloodApp(ctk.CTk):
         self._set_buttons("disabled")
 
         mode = self.mode_var.get()
-        is_ai = mode == MODE_AI
-        mn = self.model_var.get()
+        is_ai = mode != MODE_WHITE
+        internal_model = MODE_MAP.get(mode, "birefnet-massive")
 
-        if is_ai and not is_model_downloaded(mn):
+        # Pop-up confirmation if model needs download
+        if is_ai and not is_model_downloaded(internal_model):
             ans = messagebox.askyesno(
                 APP_NAME,
-                f"Model AI '{mn}' belum terinstal di komputer.\n\n"
+                f"Model AI '{internal_model}' belum terinstal di komputer.\n\n"
                 f"Apakah kamu ingin mengunduh model ini sekarang?\n"
                 f"(Ukuran file ±150–250 MB, mengunduh via internet).",
             )
@@ -865,21 +953,24 @@ class WhiteFloodApp(ctk.CTk):
                 self.progress.set(0)
                 return
 
+        # Show visual spinner & progress
+        self.lbl_after.pack_forget()
+        self.spinner_frame.pack(expand=True)
+        self.spinner.start()
+
         if is_ai:
-            self.status_text.set(f"AI [{mn}] sedang memproses…")
+            self.status_text.set(f"Menghapus background ({mode})...")
         else:
-            self.status_text.set("Memproses…")
+            self.status_text.set("Menghapus background (WhiteFlood)...")
         self.progress.set(0.15)
 
-        # Snapshot settings.
+        # Snapshot parameters
         th = self.threshold_var.get()
         fr = self.fringe_var.get()
-        es = self.smooth_var.get()
         ag = self.aggressive_var.get()
-        am = self.alpha_matting_var.get()
+        es, am = self._get_refinement_params()
 
         def _status_cb(msg):
-            """Update status bar from worker thread."""
             self.after(0, lambda m=msg: self.status_text.set(m))
             self.after(0, lambda: self.progress.configure(
                 progress_color=C["purple"] if "⬇" in msg else C["accent"]
@@ -898,7 +989,7 @@ class WhiteFloodApp(ctk.CTk):
                 if is_ai:
                     result = ai_remove_bg(
                         self._original, edge_smooth=es,
-                        model_name=mn, alpha_matting=am,
+                        model_name=internal_model, alpha_matting=am,
                         status_cb=_status_cb,
                     )
                 else:
@@ -907,13 +998,21 @@ class WhiteFloodApp(ctk.CTk):
                 self._result = result
                 self.after(0, lambda: self._on_process_ok())
             except Exception as e:
-                self.after(0, lambda err=str(e): self._on_process_err(err))
+                err_msg = str(e)
+                if "allocate" in err_msg.lower():
+                    err_msg = "Memori RAM tidak cukup untuk Alpha Matting. Silakan gunakan mode ketajaman Original."
+                self.after(0, lambda err=err_msg: self._on_process_err(err))
 
         threading.Thread(target=_worker, daemon=True).start()
 
     def _on_process_ok(self):
+        self.spinner.stop()
+        self.spinner_frame.pack_forget()
+        self.lbl_after.pack(expand=True)
+
         self._processing = False
         self.progress.set(1.0)
+        self.progress.configure(progress_color=C["accent"])
         self._show_preview(self._original, self._result)
 
         self._set_buttons("normal")
@@ -925,27 +1024,31 @@ class WhiteFloodApp(ctk.CTk):
 
         sz = self._original.size
         mode = self.mode_var.get()
-        tag = "AI" if mode == MODE_AI else "WhiteFlood"
         self.status_text.set(
-            f"[{tag}] Selesai: {sz[0]}×{sz[1]} px.  "
-            f"Klik 'Simpan Hasil' atau ubah setting → 'Preview Ulang'."
+            f"[{mode}] Selesai: {sz[0]}×{sz[1]} px. "
+            f"Klik 'Simpan Hasil' untuk menyimpan PNG transparan."
         )
 
     def _on_process_err(self, err):
+        self.spinner.stop()
+        self.spinner_frame.pack_forget()
+        self.lbl_after.pack(expand=True)
+
         self._processing = False
         self.progress.set(0)
+        self.progress.configure(progress_color=C["accent"])
         self._set_buttons("normal")
-        self.status_text.set(f"Error: {err}")
-        messagebox.showerror(APP_NAME, err)
+        self.status_text.set(f"Gagal memproses: {err}")
+        messagebox.showerror(APP_NAME, f"Gagal memproses gambar:\n\n{err}")
 
     def save_result(self):
         if self._result is None:
             return
         stem = Path(self._src_path).stem if self._src_path else "output"
         dst = filedialog.asksaveasfilename(
-            title="Simpan hasil", defaultextension=".png",
+            title="Simpan hasil PNG transparan", defaultextension=".png",
             initialfile=f"{stem}_transparent.png",
-            filetypes=[("PNG", "*.png")],
+            filetypes=[("PNG Transparan", "*.png")],
         )
         if not dst:
             return
@@ -955,28 +1058,44 @@ class WhiteFloodApp(ctk.CTk):
                 sz = check.size
                 orig = self._original.size
                 if sz != orig:
-                    raise RuntimeError(f"Saved resolution mismatch: {orig} -> {sz}")
+                    raise RuntimeError(f"Resolusi tersimpan tidak cocok: {orig} -> {sz}")
             self.status_text.set(f"Disimpan: {sz[0]}×{sz[1]} px → {Path(dst).name}")
             messagebox.showinfo(
                 APP_NAME,
-                f"Tersimpan!\n\nOutput: {sz[0]}×{sz[1]} px\n"
-                f"File: {dst}\n\nTidak ada resize atau crop.",
+                f"Tersimpan!\n\nResolusi Output: {sz[0]}×{sz[1]} px\n"
+                f"Lokasi File: {dst}\n\nTanpa resize atau crop.",
             )
         except Exception as e:
             self.status_text.set(f"Error simpan: {e}")
-            messagebox.showerror(APP_NAME, str(e))
+            messagebox.showerror(APP_NAME, f"Gagal menyimpan file:\n{e}")
 
     # ───────────────────────────────────────
-    #  Batch workflow  (threaded)
+    #  Batch Workflow & Collision Avoidance
     # ───────────────────────────────────────
+
+    def _get_next_sequence_name(self, out_dir, base_name, start_idx=1):
+        """Calculate non-conflicting sequence filename so existing outputs are never overwritten."""
+        sanitized = sanitize_filename(base_name)
+        idx = start_idx
+        while True:
+            candidate = out_dir / f"{sanitized}-{idx}.png"
+            if not candidate.exists():
+                return candidate, idx
+            idx += 1
+
+    def cancel_batch(self):
+        if self._processing:
+            self._batch_cancelled = True
+            self.status_text.set("Membatalkan batch... (menunggu gambar saat ini selesai)")
+            self.btn_cancel_batch.configure(state="disabled")
 
     def process_folder(self):
-        src_dir = filedialog.askdirectory(title="Pilih folder gambar")
+        src_dir = filedialog.askdirectory(title="Pilih folder sumber gambar")
         if not src_dir:
             return
         out_dir = self.output_dir.get().strip()
         if not out_dir:
-            out_dir = filedialog.askdirectory(title="Pilih folder output")
+            out_dir = filedialog.askdirectory(title="Pilih folder output batch")
             if not out_dir:
                 return
             self.output_dir.set(out_dir)
@@ -985,16 +1104,17 @@ class WhiteFloodApp(ctk.CTk):
         exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
         files = sorted(p for p in src_dir.iterdir() if p.is_file() and p.suffix.lower() in exts)
         if not files:
-            messagebox.showwarning(APP_NAME, "Tidak ada gambar yang didukung di folder itu.")
+            messagebox.showwarning(APP_NAME, "Tidak ada gambar yang didukung di folder tersebut.")
             return
 
         mode = self.mode_var.get()
-        mn = self.model_var.get()
+        internal_model = MODE_MAP.get(mode, "birefnet-massive")
+        is_ai = mode != MODE_WHITE
 
-        if mode == MODE_AI and not is_model_downloaded(mn):
+        if is_ai and not is_model_downloaded(internal_model):
             ans = messagebox.askyesno(
                 APP_NAME,
-                f"Model AI '{mn}' belum terinstal di komputer.\n\n"
+                f"Model AI '{internal_model}' belum terinstal di komputer.\n\n"
                 f"Apakah kamu ingin mengunduh model ini sekarang?\n"
                 f"(Ukuran file ±150–250 MB, mengunduh via internet).",
             )
@@ -1002,53 +1122,73 @@ class WhiteFloodApp(ctk.CTk):
                 self.status_text.set("Pengunduhan model dibatalkan pengguna.")
                 return
 
-        th, fr, es, ag = (
-            self.threshold_var.get(), self.fringe_var.get(),
-            self.smooth_var.get(), self.aggressive_var.get(),
+        th, fr, ag = (
+            self.threshold_var.get(), self.fringe_var.get(), self.aggressive_var.get(),
         )
-        am = self.alpha_matting_var.get()
+        es, am = self._get_refinement_params()
+        base_batch_name = self.batch_name_var.get()
+
         total = len(files)
+        self._processing = True
+        self._batch_cancelled = False
         self._set_buttons("disabled")
+        self.btn_cancel_batch.configure(state="normal", fg_color=C["red"])
 
         def _batch():
             ok, errors = 0, []
+            current_seq = 1
             for idx, src in enumerate(files, 1):
-                self.after(0, lambda i=idx, n=src.name: self._batch_tick(i, total, n))
+                if self._batch_cancelled:
+                    break
+
+                dst_path, next_seq = self._get_next_sequence_name(out_dir, base_batch_name, current_seq)
+                current_seq = next_seq + 1
+
+                self.after(0, lambda i=idx, n=src.name, d=dst_path.name: self._batch_tick(i, total, n, d))
                 try:
-                    dst = out_dir / f"{src.stem}.png"
-                    process_file(src, dst, mode, th, fr, es, ag,
-                                 model_name=mn, alpha_matting=am)
+                    process_file(src, dst_path, mode, th, fr, es, ag,
+                                 model_name=internal_model, alpha_matting=am)
                     ok += 1
                 except Exception as e:
                     errors.append(f"{src.name}: {e}")
-            self.after(0, lambda: self._batch_done(ok, total, errors))
+
+            self.after(0, lambda: self._batch_done(ok, total, errors, cancelled=self._batch_cancelled))
 
         threading.Thread(target=_batch, daemon=True).start()
 
-    def _batch_tick(self, idx, total, name):
-        self.status_text.set(f"Memproses {idx}/{total}: {name}")
+    def _batch_tick(self, idx, total, src_name, dst_name):
+        self.status_text.set(f"Memproses {idx}/{total}: {src_name} → {dst_name}")
         self.progress.set(idx / total)
 
-    def _batch_done(self, ok, total, errors):
+    def _batch_done(self, ok, total, errors, cancelled=False):
         self.progress.set(0)
+        self._processing = False
         self._set_buttons("normal")
-        if errors:
+        self.btn_cancel_batch.configure(state="disabled", fg_color=C["border"])
+
+        if cancelled:
+            msg = f"Batch dibatalkan. {ok} dari {total} gambar selesai diproses."
+            self.status_text.set(msg)
+            messagebox.showinfo(APP_NAME, msg)
+        elif errors:
             self.status_text.set(f"Selesai {ok}/{total}. Ada {len(errors)} error.")
             messagebox.showwarning(
                 APP_NAME,
-                f"Selesai: {ok}/{total} file.\nError: {len(errors)} file.\n\n"
+                f"Selesai: {ok}/{total} file.\nAda error pada {len(errors)} file:\n\n"
                 + "\n".join(errors[:10]),
             )
         else:
-            self.status_text.set(f"Selesai: {ok} file. Semua ukuran piksel dipertahankan.")
+            self.status_text.set(f"Selesai: {ok} file diproses tanpa merubah resolusi.")
             messagebox.showinfo(
                 APP_NAME,
-                f"Selesai memproses {ok} file.\n\n"
-                f"Semua output mempertahankan ukuran piksel asli.",
+                f"Selesai memproses {ok} file!\n\n"
+                f"Semua output mempertahankan 100% ukuran piksel asli.",
             )
 
 
 # ═══════════════════════════════════════════════════════════
 if __name__ == "__main__":
+    splash = show_splash()
     app = WhiteFloodApp()
+    app.after(150, lambda: splash.destroy() if splash.winfo_exists() else None)
     app.mainloop()
