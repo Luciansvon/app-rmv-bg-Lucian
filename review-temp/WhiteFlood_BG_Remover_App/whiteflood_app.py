@@ -848,7 +848,7 @@ class WhiteFloodApp(ctk.CTk):
         ).pack(anchor="w", pady=(0, 10))
 
         # Single Image Actions
-        self._section_label(sidebar, "GAMBAR TUNGGAL")
+        self._lbl_single_section = self._section_label(sidebar, "GAMBAR TUNGGAL")
         
         self.btn_pick = ctk.CTkButton(
             sidebar, text="Pilih Gambar", command=self.load_and_process,
@@ -1006,14 +1006,14 @@ class WhiteFloodApp(ctk.CTk):
             self.btn_tool_rmbg.configure(fg_color=C["accent"], text_color=C["text"])
             self.btn_tool_upscale.configure(fg_color="transparent", text_color=C["dim"])
             self.frame_upscale_settings.pack_forget()
-            self.frame_rmbg_settings.pack(fill="x")
+            self.frame_rmbg_settings.pack(fill="x", before=self._lbl_single_section)
             self.btn_repreview.configure(text="Preview Ulang")
             self.status_text.set(f"Alat aktif: Hapus Background. [RAM: {get_process_memory_mb()} MB]")
         else:
             self.btn_tool_upscale.configure(fg_color=C["accent"], text_color=C["text"])
             self.btn_tool_rmbg.configure(fg_color="transparent", text_color=C["dim"])
             self.frame_rmbg_settings.pack_forget()
-            self.frame_upscale_settings.pack(fill="x")
+            self.frame_upscale_settings.pack(fill="x", before=self._lbl_single_section)
             self.btn_repreview.configure(text="Proses Upscale")
             self.status_text.set(f"Alat aktif: Upscale ({self.scale_var.get()}x). [RAM: {get_process_memory_mb()} MB]")
 
