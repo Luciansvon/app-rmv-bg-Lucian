@@ -1,99 +1,104 @@
-# WhiteFlood BG Remover v2.0
+# WhiteFlood BG Remover & Upscaler v2.5.0
 
-Aplikasi Windows untuk menghapus background putih / near-white menjadi transparan.
-Sekarang dengan **UI modern dark theme** dan **algoritma yang lebih bersih**.
+**Built by Bima Chakti © 2026**
 
-## Yang dijaga
+Aplikasi Windows Desktop untuk menghapus background dan memperbesar foto produk furnitur.
+Output selalu PNG transparan dengan dimensi presisi 100%.
 
-- Tidak melakukan resize.
-- Tidak melakukan crop.
-- Lebar dan tinggi piksel output selalu sama dengan input.
-- Output selalu PNG transparan.
-- DPI / ICC profile / EXIF dipertahankan jika format sumber dan Pillow memungkinkan.
-- Aplikasi memverifikasi ulang ukuran file setelah PNG disimpan.
+---
 
-Contoh:
+## Fitur Utama
 
-Input  : 2048 x 2048 px
-Output : 2048 x 2048 px
+### ✂️ Remove Background (Hapus Background)
+- **5 Mode AI**:
+  - 🪑 Furniture Quality — Rekomendasi utama untuk foto produk furnitur, kayu, & katalog
+  - ⚡ Fast — Proses cepat untuk gambar biasa
+  - 👤 Person — Khusus foto orang, pakaian, & rambut
+  - 🔍 High Detail — Khusus resolusi tinggi & ukiran halus
+  - 🌊 White Background — Instan tanpa AI untuk background putih polos
+- **Ketajaman Tepi**: Original, Soft (Pinggiran Halus), Alpha Matte (Deteksi Rambut)
+- **Pengaturan Lanjutan**: White Threshold, Fringe Cleanup, Mode Agresif
 
-## Fitur Baru di v2.0
+### 🔍 Upscale (Perbesar Foto)
+- Perbesaran **2x** atau **4x**
+- **Alpha-Safe Pipeline**: Siluet kaki meja tipis & ukiran dipertahankan presisi 100%
+- Kanal alpha (transparansi) dan RGB diperbesar terpisah dengan algoritma Lanczos
 
-- **UI Modern Dark Theme** — tampilan gelap elegan dengan CustomTkinter
-- **Preview Before/After** — lihat hasil sebelum menyimpan
-- **Preview Ulang** — ubah setting, klik preview ulang tanpa pilih file lagi
-- **Algoritma Lebih Bersih**:
-  - Threshold berbasis luminance (lebih baik untuk background abu-abu)
-  - Morphological dilation (menutup celah di tepi)
-  - Edge smoothing / feathering (transisi halus di pinggir objek)
-  - Fringe cleanup yang lebih efektif
-- **Mode Agresif** — untuk background bergradasi / ada bayangan (shadow)
-- **Progress Bar** visual saat batch processing
-- **Thread-safe batch** — UI tidak freeze saat batch
+### Fitur Umum
+- **Preview Before/After** — Split-slider interaktif gaya Upscayl
+- **Batch Processing** — Proses satu folder sekaligus dengan penamaan otomatis
+- **Metadata Preserved** — DPI / ICC Profile / EXIF dipertahankan
+- **RAM Monitor** — Tampilan penggunaan memori real-time
+- **Dark Theme** — UI modern gelap dengan CustomTkinter
 
-## Jalankan tanpa membuat EXE
+## Aturan Dimensi
 
-1. Install Python 3.11 atau lebih baru.
-2. Extract folder ini.
-3. Double-click `RUN_APP.bat`.
-4. Pertama kali dijalankan, dependency akan otomatis di-install.
+Dimensi output dijaga ketat:
+
+| Tool | Input | Output |
+|---|---|---|
+| Remove BG | 2048×2048 px | 2048×2048 px (sama persis) |
+| Upscale 2x | 2048×2048 px | 4096×4096 px |
+| Upscale 4x | 2048×2048 px | 8192×8192 px |
+
+Tidak ada resize atau crop yang tidak diinginkan.
+
+## Jalankan Tanpa Membuat EXE
+
+1. Install **Python 3.11** atau lebih baru
+2. Extract folder ini
+3. Double-click `RUN_APP.bat`
+4. Pertama kali dijalankan, dependency akan otomatis di-install
 
 ## Membuat .EXE Windows
 
-Double-click:
+Double-click: `BUILD_EXE.bat`
 
-`BUILD_EXE.bat`
+Setelah selesai, file ada di: `dist\WhiteFlood_BG_Remover.exe`
 
-Setelah selesai, file ada di:
+> File EXE besar (~300-500 MB) karena berisi AI model dan semua library. Ini normal, bukan virus.
 
-`dist\WhiteFlood_BG_Remover.exe`
+## Cara Pakai
 
-File EXE tersebut dapat dijalankan tanpa membuka Python secara manual.
+### Satu Gambar — Remove BG
+1. Pilih alat **✂️ Hapus BG**
+2. Pilih mode AI yang sesuai
+3. Klik **Pilih Gambar**
+4. Hasil langsung muncul di preview (split before/after)
+5. Ubah setting jika perlu, lalu klik **Preview Ulang**
+6. Klik **Simpan PNG**
 
-## Cara pakai
+### Satu Gambar — Upscale
+1. Pilih alat **🔍 Upscale**
+2. Klik **Pilih Gambar** — gambar ditampilkan tanpa auto-proses
+3. Pilih skala **2x** atau **4x**
+4. Klik **Proses Upscale**
+5. Klik **Simpan PNG**
 
-### Satu gambar
-1. Klik `Pilih Gambar`
-2. Pilih file gambar
-3. Hasil langsung muncul di preview (before / after)
-4. Ubah setting jika perlu, lalu klik `Preview Ulang`
-5. Kalau sudah puas, klik `Simpan Hasil`
+### Batch (Banyak Gambar)
+1. Pilih alat yang diinginkan (Hapus BG atau Upscale)
+2. Isi **Nama Batch** (contoh: kursi-panjang)
+3. Pilih **Folder Output**
+4. Klik **Start Batch**, lalu pilih folder sumber gambar
+5. Semua PNG/JPG/JPEG/WEBP/BMP di folder akan diproses
+6. Hasil disimpan sebagai: `kursi-panjang-1.png`, `kursi-panjang-2.png`, dst.
 
-### Banyak gambar (batch)
-1. Tentukan `Folder Output Batch`
-2. Klik `Batch 1 Folder`
-3. Pilih folder sumber
-4. Semua PNG/JPG/JPEG/WEBP/BMP di folder akan diproses
-5. Progress bar menunjukkan kemajuan
+## Dependencies
 
-## Setting
+```
+Pillow>=10.0
+numpy>=1.24
+customtkinter>=5.2
+rembg[cpu]>=2.0
+psutil>=5.9
+```
 
-### White Threshold
-Default: 220
+## Batasan
 
-Pixel dengan kecerahan (luminance) di atas nilai ini dianggap "putih".
-- Naikkan jika background putih masih tertinggal.
-- Turunkan jika bagian objek yang terang mulai ikut hilang.
+- Mode White Background hanya bekerja pada background putih/abu-abu polos
+- Model AI pertama kali perlu diunduh (~150-250 MB per model)
+- Upscale 4x pada gambar besar membutuhkan RAM yang cukup
 
-### Fringe Cleanup
-Default: 30
+---
 
-Mengurangi sisa garis putih tipis pada tepi objek.
-
-### Edge Smoothing
-Default: 2
-
-Membuat transisi antara objek dan background lebih halus (Gaussian blur pada mask alpha). Nilai 0 = transisi tajam, nilai lebih tinggi = lebih smooth.
-
-### Mode Agresif
-Default: OFF
-
-Aktifkan untuk background yang bergradasi (putih ke abu-abu) atau ada bayangan/shadow. Mode ini melakukan dua kali proses: pertama menghapus pixel putih, lalu memperluas ke pixel abu-abu yang berdekatan.
-
-## Batasan algoritma
-
-Algoritma menganggap pixel terang yang terhubung dengan tepi kanvas sebagai background.
-
-Karena itu, objek putih yang menyentuh tepi gambar dan menyatu dengan background putih dapat ikut terhapus.
-
-Ini bukan AI segmentation — tidak bisa memisahkan objek secara cerdas dari background berwarna selain putih/abu-abu.
+**© 2026 Bima Chakti**

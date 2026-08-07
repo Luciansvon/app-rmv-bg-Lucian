@@ -2,6 +2,7 @@ Pillow>=10.0
 numpy>=1.24
 customtkinter>=5.2
 rembg[cpu]>=2.0
+psutil>=5.9
 
 # Build tools (install terpisah saat mau buat .EXE):
 # pip install pyinstaller>=6.0

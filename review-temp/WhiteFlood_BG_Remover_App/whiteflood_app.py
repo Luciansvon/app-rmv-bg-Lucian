@@ -8,6 +8,7 @@ Layout: Upscayl-Style Interactive Split-Slider Preview + Narrow Sidebar (~290px)
 
 import os
 import sys
+import gc
 import threading
 import importlib.util
 import re
@@ -263,15 +264,19 @@ class SplitSliderPreview(ctk.CTkCanvas):
             )
             return
 
-        orig_w, orig_h = self.original_img.size
-        scale = min(w / orig_w, h / orig_h)
-        disp_w = max(1, int(orig_w * scale))
-        disp_h = max(1, int(orig_h * scale))
+        # Use result size as the reference for display when available (Upscale mode)
+        ref_img = self.result_img if self.result_img else self.original_img
+        ref_w, ref_h = ref_img.size
+        scale = min(w / ref_w, h / ref_h)
+        disp_w = max(1, int(ref_w * scale))
+        disp_h = max(1, int(ref_h * scale))
 
         offset_x = (w - disp_w) // 2
         offset_y = (h - disp_h) // 2
 
         orig_disp = self.original_img.resize((disp_w, disp_h), Image.LANCZOS)
+        if orig_disp.mode != "RGBA":
+            orig_disp = orig_disp.convert("RGBA")
 
         if self.result_img:
             res_disp = self.result_img.resize((disp_w, disp_h), Image.LANCZOS)
@@ -375,7 +380,6 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
             _rembg_model_name = None
             try:
                 del old_session
-                import gc
                 gc.collect()
             except Exception:
                 pass
@@ -473,7 +477,6 @@ def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
 
     # Garbage collect temporary arrays
     del arr, alpha, alpha_pil, refined_alpha
-    import gc
     gc.collect()
 
     if result.size != original_size:
@@ -546,7 +549,6 @@ def flood_remove_bg(img, threshold=220, fringe=30,
     result = Image.fromarray(arr, "RGBA")
 
     del arr, rgb, alpha, lum, near_white, visited
-    import gc
     gc.collect()
 
     if result.size != original_size:
@@ -994,7 +996,6 @@ class WhiteFloodApp(ctk.CTk):
                 _rembg_model_name = None
                 try:
                     del old_session
-                    import gc
                     gc.collect()
                 except Exception:
                     pass
@@ -1006,12 +1007,14 @@ class WhiteFloodApp(ctk.CTk):
             self.btn_tool_upscale.configure(fg_color="transparent", text_color=C["dim"])
             self.frame_upscale_settings.pack_forget()
             self.frame_rmbg_settings.pack(fill="x")
+            self.btn_repreview.configure(text="Preview Ulang")
             self.status_text.set(f"Alat aktif: Hapus Background. [RAM: {get_process_memory_mb()} MB]")
         else:
             self.btn_tool_upscale.configure(fg_color=C["accent"], text_color=C["text"])
             self.btn_tool_rmbg.configure(fg_color="transparent", text_color=C["dim"])
             self.frame_rmbg_settings.pack_forget()
             self.frame_upscale_settings.pack(fill="x")
+            self.btn_repreview.configure(text="Proses Upscale")
             self.status_text.set(f"Alat aktif: Upscale ({self.scale_var.get()}x). [RAM: {get_process_memory_mb()} MB]")
 
     def _set_scale(self, scale):
@@ -1087,6 +1090,28 @@ class WhiteFloodApp(ctk.CTk):
     #  Single-Image Processing Workflow
     # ───────────────────────────────────────
 
+    def _load_image_only(self):
+        """Load image and show preview without processing (for Upscale mode)."""
+        try:
+            with Image.open(self._src_path) as img:
+                has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
+                self._original = img.convert("RGBA") if has_alpha else img.convert("RGB")
+                self._original_meta = metadata_for_save(img)
+
+            self._result = None
+            self.preview_canvas.set_images(self._original, None)
+
+            orig_sz = self._original.size
+            self.status_text.set(
+                f"Gambar dimuat: {orig_sz[0]}×{orig_sz[1]} px. "
+                f"Pilih skala lalu klik 'Proses Upscale'. [RAM: {get_process_memory_mb()} MB]"
+            )
+            self.btn_repreview.configure(state="normal")
+            self.btn_save.configure(state="disabled", fg_color=C["border"])
+        except Exception as e:
+            self.status_text.set(f"Gagal memuat gambar: {e}")
+            messagebox.showerror(APP_NAME, f"Gagal memuat gambar:\n{e}")
+
     def load_and_process(self):
         src = filedialog.askopenfilename(
             title="Pilih gambar produk",
@@ -1096,9 +1121,15 @@ class WhiteFloodApp(ctk.CTk):
             return
         self._src_path = src
         self._original = None
-        self._do_process()
+
+        if self.active_tool == TOOL_UPSCALE:
+            self._load_image_only()
+        else:
+            self._do_process()
 
     def repreview(self):
+        if self._src_path and self._original is None:
+            self._load_image_only()
         if self._original is None:
             return
         self._do_process()
@@ -1157,7 +1188,8 @@ class WhiteFloodApp(ctk.CTk):
             try:
                 if self._original is None:
                     with Image.open(self._src_path) as img:
-                        self._original = img.copy()
+                        has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
+                        self._original = img.convert("RGBA") if has_alpha else img.convert("RGB")
                         self._original_meta = metadata_for_save(img)
 
                 self.after(0, lambda: self.progress.set(0.4))
@@ -1397,5 +1429,5 @@ if __name__ == "__main__":
             pass
         app.deiconify()
 
-    app.after(300, _reveal)
+    app.after(800, _reveal)
     app.mainloop()

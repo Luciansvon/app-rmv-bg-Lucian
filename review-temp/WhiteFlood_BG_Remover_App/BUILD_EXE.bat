@@ -24,6 +24,7 @@ python -m PyInstaller ^
   --add-data "logo.ico;." ^
   --add-data "logo.png;." ^
   --collect-all customtkinter ^
+  --hidden-import psutil ^
   --name "WhiteFlood_BG_Remover" ^
   whiteflood_app.py
 
