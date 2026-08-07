@@ -572,20 +572,21 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None):
     if status_cb:
         status_cb(f"🔍 Memperbesar foto ({scale}x: {original_size[0]}×{original_size[1]} → {new_w}×{new_h} px)...")
 
-    if img.mode == "RGBA":
-        r, g, b, a = img.split()
+    has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+
+    if has_alpha:
+        img_rgba = img.convert("RGBA")
+        r, g, b, a = img_rgba.split()
         rgb_img = Image.merge("RGB", (r, g, b))
 
-        # Alpha channel deterministic upscale
         a_upscaled = a.resize((new_w, new_h), Image.LANCZOS)
-
-        # RGB channels high-quality upscale
         rgb_upscaled = rgb_img.resize((new_w, new_h), Image.LANCZOS)
 
         r_up, g_up, b_up = rgb_upscaled.split()
         result = Image.merge("RGBA", (r_up, g_up, b_up, a_upscaled))
     else:
-        result = img.resize((new_w, new_h), Image.LANCZOS)
+        img_rgb = img.convert("RGB")
+        result = img_rgb.resize((new_w, new_h), Image.LANCZOS)
 
     import gc
     gc.collect()
@@ -619,7 +620,10 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
             raise RuntimeError(f"Resolusi tidak cocok: Ekspektasi {expected_size} -> {result.size}")
 
         dst.parent.mkdir(parents=True, exist_ok=True)
-        result.save(dst, format="PNG", optimize=False, **meta)
+        try:
+            result.save(dst, format="PNG", optimize=False, **meta)
+        except Exception:
+            result.save(dst, format="PNG", optimize=False)
 
         with Image.open(dst) as check:
             if check.size != expected_size:
@@ -1237,7 +1241,11 @@ class WhiteFloodApp(ctk.CTk):
         if not dst:
             return
         try:
-            self._result.save(dst, format="PNG", optimize=False, **self._original_meta)
+            try:
+                self._result.save(dst, format="PNG", optimize=False, **self._original_meta)
+            except Exception:
+                self._result.save(dst, format="PNG", optimize=False)
+
             with Image.open(dst) as check:
                 sz = check.size
                 res_sz = self._result.size
