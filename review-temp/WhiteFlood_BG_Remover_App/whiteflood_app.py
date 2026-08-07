@@ -425,10 +425,31 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
     raise RuntimeError(f"Gagal memuat model '{model_name}': {err_msg}")
 
 
-def refine_alpha_mask(alpha_img, edge_smooth=0, erode_size=1):
+def _get_realesrgan_exe_path():
+    """Locate realesrgan-ncnn-vulkan.exe in frozen MEIPASS, local directory, or PATH."""
+    if getattr(sys, "frozen", False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).parent
+
+    candidates = [
+        base / "realesrgan" / "realesrgan-ncnn-vulkan.exe",
+        base / "realesrgan-ncnn-vulkan.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    import shutil
+    which_exe = shutil.which("realesrgan-ncnn-vulkan")
+    if which_exe:
+        return Path(which_exe)
+    return None
+
+
+def refine_alpha_mask(alpha_img, edge_smooth=0, erode_size=0):
     """
     Community Mask Refinement:
-    1. Erode (shrink) 1px to strip white background color bleed along outer edge.
+    1. Erode (shrink) 1px to strip white background color bleed along outer edge if requested.
     2. Apply GaussianBlur for smooth anti-aliased edge when requested.
     """
     if erode_size > 0:
@@ -440,7 +461,7 @@ def refine_alpha_mask(alpha_img, edge_smooth=0, erode_size=1):
     return alpha_img
 
 
-def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
+def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive",
                  alpha_matting=False, status_cb=None):
     """Remove background using neural network preserving exact pixel dimensions."""
     if not REMBG_OK:
@@ -466,18 +487,17 @@ def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
         alpha_matting_erode_size=10,
     )
 
-    arr = np.array(result, dtype=np.uint8)
-    alpha = arr[:, :, 3]
-    alpha_pil = Image.fromarray(alpha, "L")
+    if edge_smooth > 0 or erode_size > 0:
+        arr = np.array(result, dtype=np.uint8)
+        alpha = arr[:, :, 3]
+        alpha_pil = Image.fromarray(alpha, "L")
 
-    refined_alpha = refine_alpha_mask(alpha_pil, edge_smooth=edge_smooth, erode_size=1)
-    arr[:, :, 3] = np.array(refined_alpha)
+        refined_alpha = refine_alpha_mask(alpha_pil, edge_smooth=edge_smooth, erode_size=erode_size)
+        arr[:, :, 3] = np.array(refined_alpha)
 
-    result = Image.fromarray(arr, "RGBA")
-
-    # Garbage collect temporary arrays
-    del arr, alpha, alpha_pil, refined_alpha
-    gc.collect()
+        result = Image.fromarray(arr, "RGBA")
+        del arr, alpha, alpha_pil, refined_alpha
+        gc.collect()
 
     if result.size != original_size:
         raise RuntimeError("Internal error: Ukuran piksel berubah.")
@@ -557,40 +577,74 @@ def flood_remove_bg(img, threshold=220, fringe=30,
 
 
 # ═══════════════════════════════════════════════════════════
-#  Alpha-Safe Image Upscaler Engine (2x / 4x)
+#  Alpha-Safe Real-ESRGAN NCNN Vulkan Upscaler Engine (2x / 4x)
 # ═══════════════════════════════════════════════════════════
 
 def upscale_image_alpha_safe(img, scale=2, status_cb=None):
     """
-    Upscale image using Alpha-Safe Pipeline:
-    - Alpha Channel: Resized using deterministic high-quality Lanczos algorithm.
-    - RGB Channels: Resized with high quality Lanczos after alpha-aware edge padding.
+    Upscale image using Real-ESRGAN NCNN Vulkan GPU Backend:
+    - RGB Channels: AI-upscaled via Real-ESRGAN NCNN Vulkan subprocess.
+    - Alpha Channel: Deterministic Lanczos upscale.
     Preserves exact furniture silhouettes, thin legs, and handles without AI alpha hallucination.
     """
     original_size = img.size
     new_w = original_size[0] * scale
     new_h = original_size[1] * scale
 
+    exe_path = _get_realesrgan_exe_path()
+    if exe_path is None:
+        raise RuntimeError(
+            "Biner 'realesrgan-ncnn-vulkan.exe' tidak ditemukan.\n"
+            "Pastikan folder 'realesrgan' terikut pada aplikasi."
+        )
+
     if status_cb:
-        status_cb(f"🔍 Memperbesar foto ({scale}x: {original_size[0]}×{original_size[1]} → {new_w}×{new_h} px)...")
+        status_cb(f"🔍 AI Upscale ({scale}x: {original_size[0]}×{original_size[1]} → {new_w}×{new_h} px) via Real-ESRGAN Vulkan...")
+
+    import tempfile
+    import subprocess
 
     has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
 
-    if has_alpha:
-        img_rgba = img.convert("RGBA")
-        r, g, b, a = img_rgba.split()
-        rgb_img = Image.merge("RGB", (r, g, b))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        in_tmp = tmpdir_path / "input_rgb.jpg"
+        out_tmp = tmpdir_path / "output_rgb.png"
 
-        a_upscaled = a.resize((new_w, new_h), Image.LANCZOS)
-        rgb_upscaled = rgb_img.resize((new_w, new_h), Image.LANCZOS)
+        if has_alpha:
+            img_rgba = img.convert("RGBA")
+            r, g, b, a = img_rgba.split()
+            rgb_img = Image.merge("RGB", (r, g, b))
+            rgb_img.save(in_tmp, format="JPEG", quality=95)
 
-        r_up, g_up, b_up = rgb_upscaled.split()
-        result = Image.merge("RGBA", (r_up, g_up, b_up, a_upscaled))
-    else:
-        img_rgb = img.convert("RGB")
-        result = img_rgb.resize((new_w, new_h), Image.LANCZOS)
+            a_upscaled = a.resize((new_w, new_h), Image.LANCZOS)
+        else:
+            img_rgb = img.convert("RGB")
+            img_rgb.save(in_tmp, format="JPEG", quality=95)
+            a_upscaled = None
 
-    import gc
+        cmd = [
+            str(exe_path),
+            "-i", str(in_tmp.resolve()),
+            "-o", str(out_tmp.resolve()),
+            "-s", str(scale),
+            "-n", "realesrgan-x4plus",
+        ]
+
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0 or not out_tmp.exists():
+            err_msg = res.stderr.strip() if res.stderr else f"Exit code {res.returncode}"
+            raise RuntimeError(f"Gagal memproses Real-ESRGAN Vulkan: {err_msg}")
+
+        with Image.open(out_tmp) as up_rgb:
+            up_rgb_loaded = up_rgb.copy()
+
+        if has_alpha and a_upscaled is not None:
+            r_up, g_up, b_up = up_rgb_loaded.convert("RGB").split()
+            result = Image.merge("RGBA", (r_up, g_up, b_up, a_upscaled))
+        else:
+            result = up_rgb_loaded.convert("RGB")
+
     gc.collect()
 
     if result.size != (new_w, new_h):
@@ -600,7 +654,7 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None):
 
 
 def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
-                 model_name="birefnet-massive", alpha_matting=False,
+                 model_name="birefnet-massive", alpha_matting=False, erode_size=0,
                  tool=TOOL_REMOVE_BG, scale=2):
     """Process a single file preserving rules for Remove BG or Upscale."""
     src, dst = Path(src), Path(dst)
@@ -615,7 +669,7 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
             if mode == MODE_WHITE:
                 result = flood_remove_bg(img, threshold, fringe, edge_smooth, aggressive)
             else:
-                result = ai_remove_bg(img, edge_smooth=edge_smooth, model_name=model_name, alpha_matting=alpha_matting)
+                result = ai_remove_bg(img, edge_smooth=edge_smooth, erode_size=erode_size, model_name=model_name, alpha_matting=alpha_matting)
             expected_size = original_size
 
         if result.size != expected_size:
@@ -628,6 +682,8 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
             result.save(dst, format="PNG", optimize=False)
 
         with Image.open(dst) as check:
+            if check.size != expected_size:
+                raise RuntimeError(f"Mismatch resolusi tersimpan: Ekspektasi {expected_size} -> {check.size}")
             if check.size != expected_size:
                 raise RuntimeError(f"Mismatch resolusi tersimpan: Ekspektasi {expected_size} -> {check.size}")
 
@@ -1007,7 +1063,6 @@ class WhiteFloodApp(ctk.CTk):
             self.btn_tool_upscale.configure(fg_color="transparent", text_color=C["dim"])
             self.frame_upscale_settings.pack_forget()
             self.frame_rmbg_settings.pack(fill="x", before=self._lbl_single_section)
-            self.btn_repreview.configure(text="Preview Ulang")
             self.status_text.set(f"Alat aktif: Hapus Background. [RAM: {get_process_memory_mb()} MB]")
         else:
             self.btn_tool_upscale.configure(fg_color=C["accent"], text_color=C["text"])
@@ -1073,44 +1128,91 @@ class WhiteFloodApp(ctk.CTk):
     def _get_refinement_params(self):
         r = self.refine_var.get()
         if r == REFINE_SOFT:
-            return 2, False
+            return 2, False, 0
         elif r == REFINE_ALPHA_MATTE:
-            return 0, True
+            return 0, True, 0
         else:
-            return 0, False
+            return 0, False, 0  # Original mode: edge_smooth=0, alpha_matting=False, erode_size=0
+
+    def _update_button_states(self):
+        """Reconstruct UI button states based on actual app state."""
+        if self._processing:
+            self.btn_pick.configure(state="disabled")
+            self.btn_batch.configure(state="disabled")
+            self.btn_repreview.configure(state="disabled")
+            self.btn_save.configure(state="disabled", fg_color=C["border"], text_color=C["text"])
+        else:
+            self.btn_pick.configure(state="normal")
+            self.btn_batch.configure(state="normal")
+            self.btn_cancel_batch.configure(state="disabled", fg_color=C["border"])
+
+            if self._original is not None:
+                self.btn_repreview.configure(state="normal")
+            else:
+                self.btn_repreview.configure(state="disabled")
+
+            if self._result is not None:
+                self.btn_save.configure(
+                    state="normal", fg_color=C["green"],
+                    hover_color=C["green_dark"], text_color="#000000",
+                )
+            else:
+                self.btn_save.configure(
+                    state="disabled", fg_color=C["border"], text_color=C["text"],
+                )
 
     def _set_buttons(self, state):
-        self.btn_pick.configure(state=state)
-        self.btn_batch.configure(state=state)
-        if state == "disabled":
-            self.btn_repreview.configure(state="disabled")
-            self.btn_save.configure(state="disabled")
+        """Deprecated helper routing to _update_button_states."""
+        self._update_button_states()
+
+    def _switch_tool(self, tool):
+        if self._processing:
+            messagebox.showwarning(APP_NAME, "Harap tunggu hingga proses saat ini selesai.")
+            return
+
+        if self.active_tool == tool:
+            return
+
+        # Release previous heavy engine from RAM
+        if self.active_tool == TOOL_REMOVE_BG:
+            global _rembg_session, _rembg_model_name
+            if _rembg_session is not None:
+                old_session = _rembg_session
+                _rembg_session = None
+                _rembg_model_name = None
+                try:
+                    del old_session
+                    gc.collect()
+                except Exception:
+                    pass
+
+        self.active_tool = tool
+        self._result = None
+
+        if tool == TOOL_REMOVE_BG:
+            self.btn_tool_rmbg.configure(fg_color=C["accent"], text_color=C["text"])
+            self.btn_tool_upscale.configure(fg_color="transparent", text_color=C["dim"])
+            self.frame_upscale_settings.pack_forget()
+            self.frame_rmbg_settings.pack(fill="x", before=self._lbl_single_section)
+            self.btn_repreview.configure(text="Preview Ulang")
+            self.status_text.set(f"Alat aktif: Hapus Background. [RAM: {get_process_memory_mb()} MB]")
+        else:
+            self.btn_tool_upscale.configure(fg_color=C["accent"], text_color=C["text"])
+            self.btn_tool_rmbg.configure(fg_color="transparent", text_color=C["dim"])
+            self.frame_rmbg_settings.pack_forget()
+            self.frame_upscale_settings.pack(fill="x", before=self._lbl_single_section)
+            self.btn_repreview.configure(text="Proses Upscale")
+            self.status_text.set(f"Alat aktif: Upscale ({self.scale_var.get()}x). [RAM: {get_process_memory_mb()} MB]")
+
+        # Retain original image in preview if available
+        if self._original is not None:
+            self.preview_canvas.set_images(self._original, None)
+
+        self._update_button_states()
 
     # ───────────────────────────────────────
     #  Single-Image Processing Workflow
     # ───────────────────────────────────────
-
-    def _load_image_only(self):
-        """Load image and show preview without processing (for Upscale mode)."""
-        try:
-            with Image.open(self._src_path) as img:
-                has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
-                self._original = img.convert("RGBA") if has_alpha else img.convert("RGB")
-                self._original_meta = metadata_for_save(img)
-
-            self._result = None
-            self.preview_canvas.set_images(self._original, None)
-
-            orig_sz = self._original.size
-            self.status_text.set(
-                f"Gambar dimuat: {orig_sz[0]}×{orig_sz[1]} px. "
-                f"Pilih skala lalu klik 'Proses Upscale'. [RAM: {get_process_memory_mb()} MB]"
-            )
-            self.btn_repreview.configure(state="normal")
-            self.btn_save.configure(state="disabled", fg_color=C["border"])
-        except Exception as e:
-            self.status_text.set(f"Gagal memuat gambar: {e}")
-            messagebox.showerror(APP_NAME, f"Gagal memuat gambar:\n{e}")
 
     def load_and_process(self):
         src = filedialog.askopenfilename(
@@ -1121,24 +1223,55 @@ class WhiteFloodApp(ctk.CTk):
             return
         self._src_path = src
         self._original = None
+        self._result = None
 
-        if self.active_tool == TOOL_UPSCALE:
-            self._load_image_only()
-        else:
+        try:
+            with Image.open(self._src_path) as img:
+                has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
+                self._original = img.convert("RGBA") if has_alpha else img.convert("RGB")
+                self._original_meta = metadata_for_save(img)
+
+            # Immediately show original image in preview canvas BEFORE worker processing
+            self.preview_canvas.set_images(self._original, None)
+            self._update_button_states()
+
+            orig_sz = self._original.size
+            if self.active_tool == TOOL_UPSCALE:
+                self.status_text.set(
+                    f"Gambar dimuat: {orig_sz[0]}×{orig_sz[1]} px. "
+                    f"Pilih skala lalu klik 'Proses Upscale'. [RAM: {get_process_memory_mb()} MB]"
+                )
+            else:
+                self.status_text.set(
+                    f"Gambar dimuat: {orig_sz[0]}×{orig_sz[1]} px. Menghapus background... [RAM: {get_process_memory_mb()} MB]"
+                )
+        except Exception as e:
+            self.status_text.set(f"Gagal memuat gambar: {e}")
+            messagebox.showerror(APP_NAME, f"Gagal memuat gambar:\n{e}")
+            return
+
+        if self.active_tool == TOOL_REMOVE_BG:
             self._do_process()
 
     def repreview(self):
-        if self._src_path and self._original is None:
-            self._load_image_only()
+        if self._original is None and self._src_path:
+            try:
+                with Image.open(self._src_path) as img:
+                    has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
+                    self._original = img.convert("RGBA") if has_alpha else img.convert("RGB")
+                    self._original_meta = metadata_for_save(img)
+                self.preview_canvas.set_images(self._original, None)
+            except Exception:
+                pass
         if self._original is None:
             return
         self._do_process()
 
     def _do_process(self):
-        if self._processing:
+        if self._processing or self._original is None:
             return
         self._processing = True
-        self._set_buttons("disabled")
+        self._update_button_states()
 
         tool = self.active_tool
         mode = self.mode_var.get()
@@ -1155,8 +1288,8 @@ class WhiteFloodApp(ctk.CTk):
             )
             if not ans:
                 self.status_text.set("Pengunduhan model dibatalkan pengguna.")
-                self._set_buttons("normal")
                 self._processing = False
+                self._update_button_states()
                 self.progress.set(0)
                 return
 
@@ -1175,7 +1308,7 @@ class WhiteFloodApp(ctk.CTk):
         th = self.threshold_var.get()
         fr = self.fringe_var.get()
         ag = self.aggressive_var.get()
-        es, am = self._get_refinement_params()
+        es, am, er = self._get_refinement_params()
 
         def _status_cb(msg):
             self.after(0, lambda m=msg: self.status_text.set(f"{m} [RAM: {get_process_memory_mb()} MB]"))
@@ -1186,12 +1319,6 @@ class WhiteFloodApp(ctk.CTk):
 
         def _worker():
             try:
-                if self._original is None:
-                    with Image.open(self._src_path) as img:
-                        has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
-                        self._original = img.convert("RGBA") if has_alpha else img.convert("RGB")
-                        self._original_meta = metadata_for_save(img)
-
                 self.after(0, lambda: self.progress.set(0.4))
 
                 if tool == TOOL_UPSCALE:
@@ -1199,7 +1326,7 @@ class WhiteFloodApp(ctk.CTk):
                 else:
                     if is_ai:
                         result = ai_remove_bg(
-                            self._original, edge_smooth=es,
+                            self._original, edge_smooth=es, erode_size=er,
                             model_name=internal_model, alpha_matting=am,
                             status_cb=_status_cb,
                         )
@@ -1225,13 +1352,7 @@ class WhiteFloodApp(ctk.CTk):
         self.progress.configure(progress_color=C["accent"])
 
         self.preview_canvas.set_images(self._original, self._result)
-
-        self._set_buttons("normal")
-        self.btn_repreview.configure(state="normal")
-        self.btn_save.configure(
-            state="normal", fg_color=C["green"],
-            hover_color=C["green_dark"], text_color="#000000",
-        )
+        self._update_button_states()
 
         orig_sz = self._original.size
         res_sz = self._result.size
@@ -1255,7 +1376,12 @@ class WhiteFloodApp(ctk.CTk):
         self._processing = False
         self.progress.set(0)
         self.progress.configure(progress_color=C["accent"])
-        self._set_buttons("normal")
+
+        # Preserve original image preview on error
+        if self._original is not None:
+            self.preview_canvas.set_images(self._original, None)
+
+        self._update_button_states()
         self.status_text.set(f"Gagal memproses: {err}")
         messagebox.showerror(APP_NAME, f"Gagal memproses gambar:\n\n{err}")
 
@@ -1349,13 +1475,13 @@ class WhiteFloodApp(ctk.CTk):
                 return
 
         th, fr, ag = self.threshold_var.get(), self.fringe_var.get(), self.aggressive_var.get()
-        es, am = self._get_refinement_params()
+        es, am, er = self._get_refinement_params()
         base_batch_name = self.batch_name_var.get()
 
         total = len(files)
         self._processing = True
         self._batch_cancelled = False
-        self._set_buttons("disabled")
+        self._update_button_states()
         self.btn_cancel_batch.configure(state="normal", fg_color=C["red"])
 
         def _batch():
@@ -1372,7 +1498,7 @@ class WhiteFloodApp(ctk.CTk):
                 try:
                     process_file(
                         src, dst_path, mode, th, fr, es, ag,
-                        model_name=internal_model, alpha_matting=am,
+                        model_name=internal_model, alpha_matting=am, erode_size=er,
                         tool=tool, scale=scale,
                     )
                     ok += 1
@@ -1392,7 +1518,7 @@ class WhiteFloodApp(ctk.CTk):
     def _batch_done(self, ok, total, errors, cancelled=False):
         self.progress.set(0)
         self._processing = False
-        self._set_buttons("normal")
+        self._update_button_states()
         self.btn_cancel_batch.configure(state="disabled", fg_color=C["border"])
 
         ram_mb = get_process_memory_mb()
