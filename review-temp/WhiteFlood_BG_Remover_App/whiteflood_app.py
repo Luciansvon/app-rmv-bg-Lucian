@@ -95,20 +95,28 @@ def metadata_for_save(img):
 #  AI Background Removal  (rembg / U2-Net)
 # ═══════════════════════════════════════════════════════════
 
-def _get_rembg_session(model_name="u2net"):
+def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
     """Lazy-load rembg and cache the session. Only imports on first call."""
     global _rembg_session, _rembg_model_name
 
     if _rembg_session is not None and _rembg_model_name == model_name:
         return _rembg_session
 
+    if status_cb:
+        status_cb(f"⬇  Mengunduh model '{model_name}'… (cuma sekali, sabar ya)")
+
     from rembg import new_session
     _rembg_session = new_session(model_name)
     _rembg_model_name = model_name
+
+    if status_cb:
+        status_cb(f"✅  Model '{model_name}' siap!")
+
     return _rembg_session
 
 
-def ai_remove_bg(img, edge_smooth=2, model_name="u2net", alpha_matting=False):
+def ai_remove_bg(img, edge_smooth=2, model_name="birefnet-massive",
+                 alpha_matting=False, status_cb=None):
     """
     Remove background using rembg (neural network).
     Works on ANY background color.
@@ -129,7 +137,7 @@ def ai_remove_bg(img, edge_smooth=2, model_name="u2net", alpha_matting=False):
     original_size = img.size
     rgba = img.convert("RGBA")
 
-    session = _get_rembg_session(model_name)
+    session = _get_rembg_session(model_name, status_cb=status_cb)
 
     # rembg returns RGBA with transparent background.
     result = rembg_remove(
@@ -346,7 +354,7 @@ class WhiteFloodApp(ctk.CTk):
         self.fringe_var = ctk.IntVar(value=30)
         self.smooth_var = ctk.IntVar(value=2)
         self.aggressive_var = ctk.BooleanVar(value=False)
-        self.model_var = ctk.StringVar(value="isnet-general-use")
+        self.model_var = ctk.StringVar(value="birefnet-massive")
         self.alpha_matting_var = ctk.BooleanVar(value=False)
         self.output_dir = ctk.StringVar(value="")
         self.status_text = ctk.StringVar(
@@ -375,17 +383,28 @@ class WhiteFloodApp(ctk.CTk):
         ico_path = base / "logo.ico"
         png_path = base / "logo.png"
 
-        try:
-            if ico_path.exists():
-                self.iconbitmap(str(ico_path))
-            elif png_path.exists():
-                from PIL import ImageTk
-                icon_img = Image.open(png_path)
-                icon_img = icon_img.resize((64, 64), Image.LANCZOS)
-                self._app_icon = ImageTk.PhotoImage(icon_img)
-                self.iconphoto(True, self._app_icon)
-        except Exception:
-            pass  # Silently skip if icon fails
+        def _apply_icon():
+            try:
+                if ico_path.exists():
+                    # Set both titlebar and taskbar icon
+                    self.iconbitmap(default=str(ico_path))
+                    self.iconbitmap(str(ico_path))
+                if png_path.exists():
+                    from PIL import ImageTk
+                    icon_img = Image.open(png_path)
+                    # Multiple sizes for taskbar + titlebar
+                    sizes = []
+                    for s in [16, 32, 48, 64, 128, 256]:
+                        resized = icon_img.copy()
+                        resized = resized.resize((s, s), Image.LANCZOS)
+                        sizes.append(ImageTk.PhotoImage(resized))
+                    self._app_icons = sizes  # keep reference!
+                    self.iconphoto(True, *sizes)
+            except Exception:
+                pass
+
+        # Delay icon setting to ensure window is fully initialized
+        self.after(50, _apply_icon)
 
     # ───────────────────────────────────────
     #  Build UI
@@ -510,7 +529,15 @@ class WhiteFloodApp(ctk.CTk):
 
         self.model_dropdown = ctk.CTkOptionMenu(
             self.settings_grid,
-            values=["u2net", "isnet-general-use", "birefnet-general"],
+            values=[
+                "birefnet-massive",
+                "birefnet-general",
+                "birefnet-portrait",
+                "birefnet-hrsod",
+                "isnet-general-use",
+                "bria-rmbg",
+                "u2net",
+            ],
             variable=self.model_var,
             fg_color=C["card_alt"], button_color=C["accent"],
             button_hover_color=C["accent_hover"],
@@ -524,7 +551,7 @@ class WhiteFloodApp(ctk.CTk):
 
         lbl_model_hint = ctk.CTkLabel(
             self.settings_grid,
-            text="💡 isnet = lebih detail  |  birefnet = paling bagus (lebih lambat)",
+            text="⭐ massive = terbaik  |  portrait = foto orang  |  hrsod = resolusi tinggi",
             text_color=C["dim"], font=ctk.CTkFont(size=10),
         )
         lbl_model_hint.grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
@@ -800,6 +827,14 @@ class WhiteFloodApp(ctk.CTk):
         mn = self.model_var.get()
         am = self.alpha_matting_var.get()
 
+        def _status_cb(msg):
+            """Update status bar from worker thread."""
+            self.after(0, lambda m=msg: self.status_text.set(m))
+            self.after(0, lambda: self.progress.configure(
+                progress_color=C["purple"] if "⬇" in msg else C["accent"]
+            ))
+            self.after(0, lambda: self.progress.set(0.3))
+
         def _worker():
             try:
                 if self._original is None:
@@ -813,6 +848,7 @@ class WhiteFloodApp(ctk.CTk):
                     result = ai_remove_bg(
                         self._original, edge_smooth=es,
                         model_name=mn, alpha_matting=am,
+                        status_cb=_status_cb,
                     )
                 else:
                     result = flood_remove_bg(self._original, th, fr, es, ag)

@@ -7,5 +7,6 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-python -m pip install -r requirements.txt
-python whiteflood_app.py
+python -m pip install -r requirements.txt >nul 2>nul
+start "" pythonw whiteflood_app.py
+exit
