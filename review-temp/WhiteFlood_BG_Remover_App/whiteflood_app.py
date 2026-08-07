@@ -18,6 +18,16 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageFilter, ImageDraw
 import numpy as np
 
+# ── Fix pythonw (windowless) stdout/stderr error ────────
+class _DummyWriter:
+    def write(self, s): pass
+    def flush(self): pass
+
+if sys.stdout is None:
+    sys.stdout = _DummyWriter()
+if sys.stderr is None:
+    sys.stderr = _DummyWriter()
+
 # ── Fix taskbar icon on Windows ──────────────────────────
 try:
     import ctypes
@@ -26,6 +36,19 @@ try:
     )
 except Exception:
     pass
+
+# ── Helper to check if model is already downloaded ──────
+def is_model_downloaded(model_name):
+    u2net_dir = Path.home() / ".u2net"
+    if not u2net_dir.exists():
+        return False
+    target = u2net_dir / f"{model_name}.onnx"
+    if target.exists() and target.stat().st_size > 1_000_000:
+        return True
+    for f in u2net_dir.glob("*.onnx"):
+        if model_name in f.name and f.stat().st_size > 1_000_000:
+            return True
+    return False
 
 # ── Check if rembg is available (lightweight, no heavy import) ──
 REMBG_OK = importlib.util.find_spec("rembg") is not None
@@ -386,13 +409,27 @@ class WhiteFloodApp(ctk.CTk):
         def _apply_icon():
             try:
                 if ico_path.exists():
-                    # Set both titlebar and taskbar icon
                     self.iconbitmap(default=str(ico_path))
                     self.iconbitmap(str(ico_path))
+
+                    # Direct Win32 WM_SETICON call to force Windows taskbar icon
+                    try:
+                        hwnd = self.winfo_id()
+                        WM_SETICON = 0x0080
+                        LR_LOADFROMFILE = 0x0010
+                        IMAGE_ICON = 1
+                        h_small = ctypes.windll.user32.LoadImageW(0, str(ico_path), IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+                        h_big = ctypes.windll.user32.LoadImageW(0, str(ico_path), IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
+                        if h_small:
+                            ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, 0, h_small)
+                        if h_big:
+                            ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, 1, h_big)
+                    except Exception:
+                        pass
+
                 if png_path.exists():
                     from PIL import ImageTk
                     icon_img = Image.open(png_path)
-                    # Multiple sizes for taskbar + titlebar
                     sizes = []
                     for s in [16, 32, 48, 64, 128, 256]:
                         resized = icon_img.copy()
@@ -404,7 +441,7 @@ class WhiteFloodApp(ctk.CTk):
                 pass
 
         # Delay icon setting to ensure window is fully initialized
-        self.after(50, _apply_icon)
+        self.after(100, _apply_icon)
 
     # ───────────────────────────────────────
     #  Build UI
@@ -812,9 +849,24 @@ class WhiteFloodApp(ctk.CTk):
 
         mode = self.mode_var.get()
         is_ai = mode == MODE_AI
+        mn = self.model_var.get()
+
+        if is_ai and not is_model_downloaded(mn):
+            ans = messagebox.askyesno(
+                APP_NAME,
+                f"Model AI '{mn}' belum terinstal di komputer.\n\n"
+                f"Apakah kamu ingin mengunduh model ini sekarang?\n"
+                f"(Ukuran file ±150–250 MB, mengunduh via internet).",
+            )
+            if not ans:
+                self.status_text.set("Pengunduhan model dibatalkan pengguna.")
+                self._set_buttons("normal")
+                self._processing = False
+                self.progress.set(0)
+                return
 
         if is_ai:
-            self.status_text.set(f"AI [{self.model_var.get()}] sedang memproses…")
+            self.status_text.set(f"AI [{mn}] sedang memproses…")
         else:
             self.status_text.set("Memproses…")
         self.progress.set(0.15)
@@ -824,7 +876,6 @@ class WhiteFloodApp(ctk.CTk):
         fr = self.fringe_var.get()
         es = self.smooth_var.get()
         ag = self.aggressive_var.get()
-        mn = self.model_var.get()
         am = self.alpha_matting_var.get()
 
         def _status_cb(msg):
@@ -938,11 +989,23 @@ class WhiteFloodApp(ctk.CTk):
             return
 
         mode = self.mode_var.get()
+        mn = self.model_var.get()
+
+        if mode == MODE_AI and not is_model_downloaded(mn):
+            ans = messagebox.askyesno(
+                APP_NAME,
+                f"Model AI '{mn}' belum terinstal di komputer.\n\n"
+                f"Apakah kamu ingin mengunduh model ini sekarang?\n"
+                f"(Ukuran file ±150–250 MB, mengunduh via internet).",
+            )
+            if not ans:
+                self.status_text.set("Pengunduhan model dibatalkan pengguna.")
+                return
+
         th, fr, es, ag = (
             self.threshold_var.get(), self.fringe_var.get(),
             self.smooth_var.get(), self.aggressive_var.get(),
         )
-        mn = self.model_var.get()
         am = self.alpha_matting_var.get()
         total = len(files)
         self._set_buttons("disabled")
