@@ -1,0 +1,7 @@
+# Build artifacts
+build/
+dist/
+*.spec
+6.0
+__pycache__/
+*.pyc

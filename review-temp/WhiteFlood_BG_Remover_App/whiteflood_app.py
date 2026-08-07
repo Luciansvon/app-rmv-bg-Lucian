@@ -35,7 +35,7 @@ if sys.stderr is None:
 try:
     import ctypes
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-        "whiteflood.bgremover.v2.5"
+        "BimaChakti.WhiteFlood.2.5"
     )
 except Exception:
     pass

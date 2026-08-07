@@ -1,41 +1,60 @@
 @echo off
 cd /d "%~dp0"
+
+echo ========================================
+echo   WhiteFlood BG Remover - Build EXE
+echo   Built by Bima Chakti
+echo ========================================
+echo.
+
+:: Cek Python tersedia
 where python >nul 2>nul
 if errorlevel 1 (
-  echo Python tidak ditemukan.
+  echo [ERROR] Python tidak ditemukan.
   echo Install Python 3.11+ dari python.org lalu centang "Add Python to PATH".
   pause
   exit /b 1
 )
 
+:: Install dependencies
+echo [1/3] Menginstall dependencies...
 python -m pip install -r requirements.txt
-python -m pip install pyinstaller>=6.0
+if errorlevel 1 (
+  echo.
+  echo [ERROR] Gagal menginstall dependencies dari requirements.txt.
+  echo Pastikan koneksi internet stabil dan pip berfungsi.
+  pause
+  exit /b 1
+)
 
+:: Install PyInstaller
 echo.
-echo Membuat EXE... (ini bisa butuh waktu beberapa menit)
-echo.
+echo [2/3] Menginstall PyInstaller...
+python -m pip install "pyinstaller>=6.0"
+if errorlevel 1 (
+  echo.
+  echo [ERROR] Gagal menginstall PyInstaller.
+  pause
+  exit /b 1
+)
 
-python -m PyInstaller ^
-  --noconfirm ^
-  --clean ^
-  --onefile ^
-  --windowed ^
-  --icon "logo.ico" ^
-  --add-data "logo.ico;." ^
-  --add-data "logo.png;." ^
-  --collect-all customtkinter ^
-  --hidden-import psutil ^
-  --name "WhiteFlood_BG_Remover" ^
-  whiteflood_app.py
+:: Bersihkan build lama
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
+if exist WhiteFlood_BG_Remover.spec del /f /q WhiteFlood_BG_Remover.spec
 
+:: Build EXE via build_exe.py
 echo.
-echo ========================================
-echo EXE selesai dibuat:
-echo %CD%\dist\WhiteFlood_BG_Remover.exe
-echo ========================================
+echo [3/3] Membuat EXE... (ini bisa butuh waktu beberapa menit)
 echo.
-echo CATATAN: File EXE besar (~300-500 MB) karena
-echo berisi AI model dan semua library.
-echo Ini normal, bukan virus.
-echo ========================================
+python build_exe.py
+
+if errorlevel 1 (
+  echo.
+  echo [ERROR] PyInstaller gagal membuat EXE.
+  echo Baca error di atas untuk detail penyebabnya.
+  pause
+  exit /b 1
+)
+
 pause
