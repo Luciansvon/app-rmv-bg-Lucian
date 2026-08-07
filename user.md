@@ -20,12 +20,16 @@ Prioritas utama: **Menjaga ketajaman objek (kaki kursi tipis, gagang pintu, ukir
 - **Keamanan Data**: Olah data secara lokal, jangan upload gambar kantor ke API cloud eksternal.
 - **Dukungan CPU**: Harus bisa jalan di komputer kantor biasa tanpa wajib kartu grafis GPU mahal.
 
-### 3. Pengaturan Default AI
+### 3. Redesain Antarmuka (Gaya Upscayl & Sidebar ChatGPT)
+- **Layar Preview Utama Jumbo**: Mengisi 75% layar aplikasi. Fitur pembanding **Split-Slider Interaktif (Upscayl-style)** di mana garis pembatas vertikal bisa digeser kanan-kiri dengan mouse untuk membandingkan gambar asli vs hasil transparan.
+- **Sidebar Samping Kiri Ramping (~300px)**: Terinspirasi dari sidebar ChatGPT desktop. Rapi, fungsional, dan menyimpan semua menu/pengaturan secara ringkas.
+
+### 4. Pengaturan Default AI
 - **Default Mode**: `Furniture Quality` (menggunakan mesin `birefnet-massive`).
 - **Default Smoothing**: `0` (Original / tanpa blur).
 - **Default Alpha Matting**: `OFF` (Tidak aktif agar RAM irit).
 
-### 4. Sistem Penamaan Batch (Batch Naming)
+### 5. Sistem Penamaan Batch (Batch Naming)
 - Pengguna memasukkan nama batch (misal `kursi-panjang`).
 - Hasil otomatis diberi nomor urut: `kursi-panjang-1.png`, `kursi-panjang-2.png`, dst.
 - Karakter aneh/ilegal pada nama file otomatis disanitasi menjadi `-`.

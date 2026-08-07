@@ -1,6 +1,7 @@
 """
 WhiteFlood BG Remover v2.4.0
 Aplikasi Windows Desktop untuk Menghapus Background Gambar Produk Furnitur (PNG Transparan).
+Layout: Upscayl-Style Interactive Split-Slider Preview + Narrow Sidebar (~290px).
 Non-negotiable rules: Tanpa Crop, Tanpa Resize, Dimensi Asli 100% Dipertahankan.
 """
 
@@ -15,7 +16,7 @@ from collections import deque
 
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageFilter, ImageDraw
+from PIL import Image, ImageFilter, ImageDraw, ImageTk
 import numpy as np
 
 # ── Fix pythonw (windowless) stdout/stderr error ────────
@@ -55,9 +56,7 @@ def sanitize_filename(name):
     """Sanitize invalid Windows filename characters."""
     if not name or not name.strip():
         return "output"
-    # Replace invalid chars < > : " / \ | ? * with -
     cleaned = re.sub(r'[<>:"/\\|?*]', '-', name.strip())
-    # Collapse multiple dashes or spaces
     cleaned = re.sub(r'[\s\-]+', '-', cleaned).strip('.- ')
     return cleaned if cleaned else "output"
 
@@ -89,7 +88,7 @@ MODE_MAP = {
 }
 
 MODE_DESC_MAP = {
-    MODE_FURNITURE: "🪑 Furniture Quality (Rekomendasi Utama — Hasil Paling Rapi untuk Produk Furnitur, Kayu, & Katalog)",
+    MODE_FURNITURE: "🪑 Furniture Quality (Rekomendasi Utama — Foto Produk Furnitur, Kayu, & Katalog)",
     MODE_FAST: "⚡ Fast (Proses Cepat untuk Gambar Biasa)",
     MODE_PERSON: "👤 Person (Khusus Foto Orang, Manusia, Pakaian, & Rambut)",
     MODE_HIGH_DETAIL: "🔍 High Detail (Khusus Resolusi Tinggi & Ukiran Halus)",
@@ -101,16 +100,16 @@ REFINE_SOFT = "Soft (Pinggiran Halus)"
 REFINE_ALPHA_MATTE = "Alpha Matte (Deteksi Rambut)"
 
 C = {
-    "bg":           "#10101c",
-    "card":         "#18182a",
-    "card_alt":     "#121220",
-    "border":       "#262640",
+    "bg":           "#0f0f18",
+    "card":         "#161626",
+    "card_alt":     "#11111d",
+    "border":       "#222238",
     "accent":       "#e94560",
     "accent_hover": "#d63851",
     "blue":         "#1e3a8a",
     "blue_hover":   "#1d4ed8",
     "text":         "#f1f5f9",
-    "dim":          "#94a3b8",
+    "dim":          "#8e8ea0",
     "green":        "#22c55e",
     "green_dark":   "#16a34a",
     "purple":       "#a855f7",
@@ -119,7 +118,6 @@ C = {
     "red_hover":    "#dc2626",
 }
 
-PREVIEW_MAX = (340, 240)
 NEIGHBORS_8 = [(-1, -1), (-1, 0), (-1, 1),
                (0, -1),           (0, 1),
                (1, -1),  (1, 0),  (1, 1)]
@@ -136,7 +134,6 @@ def show_splash(parent):
     splash.geometry("400x200")
     splash.configure(fg_color=C["card_alt"])
 
-    # Center splash on screen
     try:
         ws = splash.winfo_screenwidth()
         hs = splash.winfo_screenheight()
@@ -201,6 +198,134 @@ class LoadingSpinner(ctk.CTkCanvas):
         self.after(30, self._animate)
 
 
+class SplitSliderPreview(ctk.CTkCanvas):
+    """Interactive Upscayl-style split-slider image comparison widget."""
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, bg=C["card_alt"], highlightthickness=0, **kwargs)
+        self.slider_pos = 0.5  # 0.0 (left) to 1.0 (right)
+        self.original_img = None
+        self.result_img = None
+        self._dragging = False
+
+        self.bind("<Configure>", self._on_resize)
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<B1-Motion>", self._on_drag)
+        self.bind("<ButtonRelease-1>", self._on_release)
+
+    def set_images(self, original, result):
+        self.original_img = original
+        self.result_img = result
+        self.redraw()
+
+    def _on_resize(self, event):
+        self.redraw()
+
+    def _on_click(self, event):
+        self._update_slider_from_mouse(event.x)
+        self._dragging = True
+
+    def _on_drag(self, event):
+        if self._dragging:
+            self._update_slider_from_mouse(event.x)
+
+    def _on_release(self, event):
+        self._dragging = False
+
+    def _update_slider_from_mouse(self, mouse_x):
+        w = self.winfo_width()
+        if w > 20:
+            self.slider_pos = max(0.02, min(0.98, mouse_x / float(w)))
+            self.redraw()
+
+    def redraw(self):
+        self.delete("all")
+        w = self.winfo_width()
+        h = self.winfo_height()
+
+        if not self.original_img or w < 30 or h < 30:
+            self.create_text(
+                w // 2, h // 2,
+                text="Belum ada gambar\n\nKlik 'Pilih Gambar' pada menu samping untuk memulai.",
+                fill=C["dim"], font=("Segoe UI", 13), justify="center"
+            )
+            return
+
+        orig_w, orig_h = self.original_img.size
+        scale = min(w / orig_w, h / orig_h)
+        disp_w = max(1, int(orig_w * scale))
+        disp_h = max(1, int(orig_h * scale))
+
+        offset_x = (w - disp_w) // 2
+        offset_y = (h - disp_h) // 2
+
+        # Scale original image
+        orig_disp = self.original_img.resize((disp_w, disp_h), Image.LANCZOS)
+
+        # Scale result image with checkerboard
+        if self.result_img:
+            res_disp = self.result_img.resize((disp_w, disp_h), Image.LANCZOS)
+            checker = make_checkerboard(disp_w, disp_h, cell=10)
+            checker.paste(res_disp, (0, 0), res_disp)
+            res_disp = checker
+        else:
+            res_disp = orig_disp
+
+        split_x = int(self.slider_pos * disp_w)
+        split_x = max(0, min(disp_w, split_x))
+
+        # Composite split comparison image
+        comp = Image.new("RGBA", (disp_w, disp_h))
+        if split_x > 0:
+            left_part = orig_disp.crop((0, 0, split_x, disp_h))
+            comp.paste(left_part, (0, 0))
+        if split_x < disp_w:
+            right_part = res_disp.crop((split_x, 0, disp_w, disp_h))
+            comp.paste(right_part, (split_x, 0))
+
+        self._comp_tk = ImageTk.PhotoImage(comp)
+        self.create_image(offset_x, offset_y, anchor="nw", image=self._comp_tk)
+
+        # Draw vertical divider line & handle
+        line_x = offset_x + split_x
+        self.create_line(line_x, offset_y, line_x, offset_y + disp_h, fill=C["accent"], width=3)
+
+        handle_y = offset_y + (disp_h // 2)
+        self.create_rectangle(line_x - 14, handle_y - 18, line_x + 14, handle_y + 18, fill=C["accent"], outline=C["text"], width=1)
+        self.create_text(line_x, handle_y, text="◄  ►", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+
+        # Badges
+        self.create_rectangle(offset_x + 10, offset_y + 10, offset_x + 110, offset_y + 32, fill="#12121f", outline=C["border"], width=1)
+        self.create_text(offset_x + 60, offset_y + 21, text="GAMBAR ASLI", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+
+        self.create_rectangle(offset_x + disp_w - 130, offset_y + 10, offset_x + disp_w - 10, offset_y + 32, fill="#12121f", outline=C["border"], width=1)
+        self.create_text(offset_x + disp_w - 70, offset_y + 21, text="HASIL TRANSPARAN", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+
+
+class CollapsibleFrame(ctk.CTkFrame):
+    """Clean collapsible section for advanced settings."""
+    def __init__(self, parent, title="Pengaturan Lanjutan", **kwargs):
+        super().__init__(parent, fg_color="transparent", **kwargs)
+        self.is_open = False
+
+        self.btn_toggle = ctk.CTkButton(
+            self, text=f"▶  {title}", anchor="w",
+            fg_color="transparent", text_color=C["dim"],
+            hover_color=C["card_alt"], font=ctk.CTkFont(size=12, weight="bold"),
+            height=28, command=self.toggle
+        )
+        self.btn_toggle.pack(fill="x")
+        self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
+
+    def toggle(self):
+        self.is_open = not self.is_open
+        if self.is_open:
+            self.btn_toggle.configure(text=self.btn_toggle.cget("text").replace("▶", "▼"))
+            self.content_frame.pack(fill="x", pady=(4, 0))
+        else:
+            self.btn_toggle.configure(text=self.btn_toggle.cget("text").replace("▼", "▶"))
+            self.content_frame.pack_forget()
+
+
 # ═══════════════════════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════════════════════
@@ -226,7 +351,7 @@ def metadata_for_save(img):
 
 
 # ═══════════════════════════════════════════════════════════
-#  AI Background Removal  (rembg / BiRefNet / U2-Net)
+#  AI Background Removal Engine
 # ═══════════════════════════════════════════════════════════
 
 def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
@@ -237,7 +362,6 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
         if _rembg_model_name == model_name:
             return _rembg_session
         else:
-            # Model changed: explicitly release previous session to prevent RAM accumulation
             try:
                 del _rembg_session
                 import gc
@@ -255,7 +379,7 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
         try:
             if status_cb:
                 if attempt > 1:
-                    status_cb(f"⬇  Mencoba ulang unduhan model AI '{model_name}' (Percobaan {attempt}/{max_retries})…")
+                    status_cb(f"⬇  Mencoba ulang unduhan model AI '{model_name}' ({attempt}/{max_retries})…")
                 else:
                     status_cb(f"⬇  Mengunduh model AI '{model_name}'… (cuma sekali, mohon tunggu)")
 
@@ -298,11 +422,7 @@ def refine_alpha_mask(alpha_img, edge_smooth=0, erode_size=1):
 
 def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
                  alpha_matting=False, status_cb=None):
-    """
-    Remove background using rembg (neural network).
-    Works on ANY background color.
-    Pixel dimensions are NEVER changed.
-    """
+    """Remove background using neural network preserving exact pixel dimensions."""
     if not REMBG_OK:
         raise RuntimeError(
             "Pustaka 'rembg' belum terinstall.\n"
@@ -331,7 +451,6 @@ def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
     alpha = arr[:, :, 3]
     alpha_pil = Image.fromarray(alpha, "L")
 
-    # Apply 1px erode to strip white fringe bleed + optional feathering
     refined_alpha = refine_alpha_mask(alpha_pil, edge_smooth=edge_smooth, erode_size=1)
     arr[:, :, 3] = np.array(refined_alpha)
 
@@ -342,16 +461,9 @@ def ai_remove_bg(img, edge_smooth=0, model_name="birefnet-massive",
     return result
 
 
-# ═══════════════════════════════════════════════════════════
-#  WhiteFlood Background Removal  (flood-fill, BG putih)
-# ═══════════════════════════════════════════════════════════
-
 def flood_remove_bg(img, threshold=220, fringe=30,
                     edge_smooth=0, aggressive=False):
-    """
-    Remove near-white background connected to image borders.
-    Pixel dimensions are NEVER changed.
-    """
+    """Remove near-white connected background preserving exact pixel dimensions."""
     original_size = img.size
     rgba = img.convert("RGBA")
     arr = np.array(rgba, dtype=np.uint8)
@@ -363,7 +475,6 @@ def flood_remove_bg(img, threshold=220, fringe=30,
 
     near_white = (lum > threshold) & (alpha > 0)
 
-    # BFS from borders.
     visited = np.zeros((h, w), dtype=np.bool_)
     q = deque()
 
@@ -387,7 +498,6 @@ def flood_remove_bg(img, threshold=220, fringe=30,
                 visited[ny, nx] = True
                 q.append((ny, nx))
 
-    # Aggressive: second pass with relaxed threshold.
     if aggressive:
         rlx = max(threshold - 35, 140)
         relaxed = (lum > rlx) & (alpha > 0)
@@ -417,7 +527,6 @@ def flood_remove_bg(img, threshold=220, fringe=30,
                     visited[ny, nx] = True
                     q2.append((ny, nx))
 
-    # Morphological dilation.
     mask_pil = Image.fromarray((visited.astype(np.uint8) * 255), "L")
     dilated_pil = mask_pil.copy()
     for _ in range(2):
@@ -426,7 +535,6 @@ def flood_remove_bg(img, threshold=220, fringe=30,
     bright_enough = lum > (threshold - 25)
     visited = visited | (dilated & bright_enough & (alpha > 0))
 
-    # Edge feathering.
     bg_float = visited.astype(np.float32)
     if edge_smooth > 0:
         m = Image.fromarray((bg_float * 255).astype(np.uint8), "L")
@@ -437,7 +545,6 @@ def flood_remove_bg(img, threshold=220, fringe=30,
 
     new_alpha = arr[:, :, 3].astype(np.float32) * (1.0 - bg_smooth)
 
-    # Fringe cleanup.
     if fringe > 0:
         edge_adj = np.zeros_like(visited)
         for dy, dx in NEIGHBORS_8:
@@ -465,7 +572,7 @@ def flood_remove_bg(img, threshold=220, fringe=30,
 
 def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
                  model_name="birefnet-massive", alpha_matting=False):
-    """Process a single file end-to-end preserving pixel dimensions."""
+    """Process a single file preserving exact pixel dimensions."""
     src, dst = Path(src), Path(dst)
     with Image.open(src) as img:
         original_size = img.size
@@ -496,7 +603,7 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
 
 
 # ═══════════════════════════════════════════════════════════
-#  Application UI
+#  Application Main UI
 # ═══════════════════════════════════════════════════════════
 
 class WhiteFloodApp(ctk.CTk):
@@ -506,11 +613,10 @@ class WhiteFloodApp(ctk.CTk):
         ctk.set_appearance_mode("dark")
 
         self.title(f"{APP_NAME} v{VERSION}")
-        self.geometry("940x820")
-        self.minsize(880, 740)
+        self.geometry("1100x760")
+        self.minsize(960, 680)
         self.configure(fg_color=C["bg"])
 
-        # ── Set window icon ──
         self._set_app_icon()
 
         # State Variables
@@ -522,7 +628,7 @@ class WhiteFloodApp(ctk.CTk):
         self.output_dir = ctk.StringVar(value="")
         self.batch_name_var = ctk.StringVar(value="kursi-panjang")
         self.status_text = ctk.StringVar(
-            value="Siap. Ukuran piksel output selalu 100% sama dengan input."
+            value="Siap. Dimensi piksel output 100% sama dengan input."
         )
 
         self._src_path = None
@@ -531,9 +637,6 @@ class WhiteFloodApp(ctk.CTk):
         self._result = None
         self._processing = False
         self._batch_cancelled = False
-
-        self._img_before = None
-        self._img_after = None
 
         self._build_ui()
 
@@ -583,289 +686,248 @@ class WhiteFloodApp(ctk.CTk):
         self.after(100, _apply_icon)
 
     # ───────────────────────────────────────
-    #  Build UI
+    #  Build UI Layout
     # ───────────────────────────────────────
 
     def _build_ui(self):
-        root = ctk.CTkScrollableFrame(
-            self, fg_color="transparent",
+        # Master Horizontal Split: Left Sidebar (~290px) | Right Preview Area (Expands)
+        self.columnconfigure(0, weight=0, minsize=290)
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        # ════════════════════════════════════════════════════
+        #  LEFT SIDEBAR PANEL (~290px)
+        # ════════════════════════════════════════════════════
+        sidebar_bg = ctk.CTkFrame(self, width=290, fg_color=C["card"], corner_radius=0)
+        sidebar_bg.grid(row=0, column=0, sticky="nsew")
+        sidebar_bg.pack_propagate(False)
+
+        sidebar = ctk.CTkScrollableFrame(
+            sidebar_bg, fg_color="transparent",
             scrollbar_button_color=C["border"],
             scrollbar_button_hover_color=C["accent"],
         )
-        root.pack(fill="both", expand=True)
+        sidebar.pack(fill="both", expand=True, padx=12, pady=12)
 
-        main = ctk.CTkFrame(root, fg_color="transparent")
-        main.pack(fill="both", expand=True, padx=24, pady=16)
-
-        # ── Header Title ──
-        tf = ctk.CTkFrame(main, fg_color="transparent")
-        tf.pack(fill="x", pady=(0, 2))
+        # Header Title
+        tf = ctk.CTkFrame(sidebar, fg_color="transparent")
+        tf.pack(fill="x", pady=(0, 10))
 
         ctk.CTkLabel(
             tf, text="◆ WhiteFlood",
-            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
             text_color=C["accent"],
         ).pack(side="left")
         ctk.CTkLabel(
-            tf, text="BG Remover",
-            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
-            text_color=C["text"],
-        ).pack(side="left", padx=(6, 0))
-        ctk.CTkLabel(
             tf, text=f"v{VERSION}",
-            font=ctk.CTkFont(size=11), text_color=C["dim"],
-        ).pack(side="left", padx=(8, 0), pady=(8, 0))
+            font=ctk.CTkFont(size=10), text_color=C["dim"],
+        ).pack(side="left", padx=(6, 0), pady=(4, 0))
 
-        ctk.CTkLabel(
-            main,
-            text="Aplikasi Pemotong Background Foto Produk Furnitur. Tanpa Resize, Tanpa Crop.",
-            font=ctk.CTkFont(size=12), text_color=C["dim"],
-        ).pack(anchor="w", pady=(0, 14))
-
-        # ── Preview Card ──────────────────
-        prev_card = self._card(main, "PREVIEW GAMBAR")
-
-        prev_row = ctk.CTkFrame(prev_card, fg_color="transparent")
-        prev_row.pack(fill="x", padx=16, pady=(0, 14))
-        prev_row.columnconfigure(0, weight=1)
-        prev_row.columnconfigure(1, weight=1)
-
-        # Original Preview Box
-        bf = ctk.CTkFrame(prev_row, fg_color=C["card_alt"], corner_radius=10, height=270)
-        bf.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        bf.pack_propagate(False)
-        ctk.CTkLabel(bf, text="GAMBAR ASLI", font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"]).pack(pady=(8, 2))
-        self.lbl_before = ctk.CTkLabel(bf, text="Belum ada gambar", text_color=C["dim"], font=ctk.CTkFont(size=12))
-        self.lbl_before.pack(expand=True)
-
-        # Result Preview Box
-        af = ctk.CTkFrame(prev_row, fg_color=C["card_alt"], corner_radius=10, height=270)
-        af.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-        af.pack_propagate(False)
-        ctk.CTkLabel(af, text="HASIL TRANSPARAN", font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"]).pack(pady=(8, 2))
-        
-        self.lbl_after = ctk.CTkLabel(af, text="Belum diproses", text_color=C["dim"], font=ctk.CTkFont(size=12))
-        self.lbl_after.pack(expand=True)
-
-        # Spinner Frame (Overlay when processing)
-        self.spinner_frame = ctk.CTkFrame(af, fg_color="transparent")
-        self.spinner = LoadingSpinner(self.spinner_frame, size=48, color=C["accent"], bg_color=C["card_alt"])
-        self.spinner.pack(pady=(0, 8))
-        self.spinner_label = ctk.CTkLabel(
-            self.spinner_frame, text="Menghapus background...",
-            font=ctk.CTkFont(size=12, weight="bold"), text_color=C["accent"]
-        )
-        self.spinner_label.pack()
-
-        # ── Mode & Settings Card ─────────
-        settings_card = self._card(main, "PENGATURAN MODE PROSES")
-
-        sg = ctk.CTkFrame(settings_card, fg_color="transparent")
-        sg.pack(fill="x", padx=16, pady=(0, 14))
-        sg.columnconfigure(1, weight=1)
-
-        # 1. Mode Dropdown
-        ctk.CTkLabel(sg, text="Mode Proses", text_color=C["text"], font=ctk.CTkFont(size=13, weight="bold")).grid(row=0, column=0, sticky="w")
-        
+        # Mode Section
+        self._section_label(sidebar, "MODE PROSES")
         modes = [MODE_FURNITURE, MODE_FAST, MODE_PERSON, MODE_HIGH_DETAIL, MODE_WHITE]
         self.mode_dropdown = ctk.CTkOptionMenu(
-            sg, values=modes, variable=self.mode_var,
+            sidebar, values=modes, variable=self.mode_var,
             command=self._on_mode_change,
             fg_color=C["card_alt"], button_color=C["accent"],
             button_hover_color=C["accent_hover"],
             dropdown_fg_color=C["card"], dropdown_hover_color=C["border"],
             dropdown_text_color=C["text"], text_color=C["text"],
-            font=ctk.CTkFont(size=12, weight="bold"), corner_radius=8, height=34,
+            font=ctk.CTkFont(size=11, weight="bold"), corner_radius=6, height=32,
         )
-        self.model_dropdown = self.mode_dropdown # alias
-        self.mode_dropdown.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(14, 0))
+        self.mode_dropdown.pack(fill="x", pady=(0, 4))
 
-        # Mode Description
         self.mode_desc = ctk.CTkLabel(
-            sg, text="", font=ctk.CTkFont(size=11),
-            text_color=C["dim"], wraplength=800, justify="left",
+            sidebar, text="", font=ctk.CTkFont(size=10),
+            text_color=C["dim"], wraplength=260, justify="left",
         )
-        self.mode_desc.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 10))
+        self.mode_desc.pack(anchor="w", pady=(0, 10))
         self._update_mode_desc()
 
-        # 2. Edge Refinement Dropdown
-        self.lbl_refine = ctk.CTkLabel(sg, text="Ketajaman Tepi", text_color=C["text"], font=ctk.CTkFont(size=13))
-        self.lbl_refine.grid(row=2, column=0, sticky="w", pady=(4, 0))
-        
+        # Ketajaman Tepi Section
+        self.lbl_refine = self._section_label(sidebar, "KETAJAMAN TEPI")
         self.refine_dropdown = ctk.CTkOptionMenu(
-            sg, values=[REFINE_ORIGINAL, REFINE_SOFT, REFINE_ALPHA_MATTE],
+            sidebar, values=[REFINE_ORIGINAL, REFINE_SOFT, REFINE_ALPHA_MATTE],
             variable=self.refine_var,
             fg_color=C["card_alt"], button_color=C["blue"],
             button_hover_color=C["blue_hover"],
             dropdown_fg_color=C["card"], dropdown_hover_color=C["border"],
             dropdown_text_color=C["text"], text_color=C["text"],
-            font=ctk.CTkFont(size=12), corner_radius=8, height=32,
+            font=ctk.CTkFont(size=11), corner_radius=6, height=30,
         )
-        self.refine_dropdown.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(14, 0), pady=(4, 0))
+        self.refine_dropdown.pack(fill="x", pady=(0, 10))
 
-        # 3. WhiteFlood Specific Settings
-        self.flood_widgets = []
+        # Collapsible Advanced Settings (WhiteFlood / AI)
+        self.adv_section = CollapsibleFrame(sidebar, title="Pengaturan Lanjutan")
+        self.adv_section.pack(fill="x", pady=(0, 10))
 
-        lbl_t = ctk.CTkLabel(sg, text="White Threshold", text_color=C["text"], font=ctk.CTkFont(size=13))
-        lbl_t.grid(row=3, column=0, sticky="w", pady=(10, 0))
+        adv_f = self.adv_section.content_frame
+
+        lbl_t = ctk.CTkLabel(adv_f, text="White Threshold", text_color=C["text"], font=ctk.CTkFont(size=11))
+        lbl_t.pack(anchor="w")
         sl_t = ctk.CTkSlider(
-            sg, from_=180, to=254, variable=self.threshold_var,
+            adv_f, from_=180, to=254, variable=self.threshold_var,
             fg_color=C["border"], progress_color=C["accent"],
             button_color=C["accent"], button_hover_color=C["accent_hover"],
-            command=self._on_threshold,
+            command=self._on_threshold, height=14,
         )
-        sl_t.grid(row=3, column=1, sticky="ew", padx=14, pady=(10, 0))
-        self._lbl_white_threshold = ctk.CTkLabel(
-            sg, text="220", width=36,
-            text_color=C["accent"], font=ctk.CTkFont(size=13, weight="bold"),
-        )
-        self._lbl_white_threshold.grid(row=3, column=2, pady=(10, 0))
-        self.flood_widgets.extend([lbl_t, sl_t, self._lbl_white_threshold])
+        sl_t.pack(fill="x", pady=(2, 0))
+        self._lbl_white_threshold = ctk.CTkLabel(adv_f, text="220", text_color=C["accent"], font=ctk.CTkFont(size=10, weight="bold"))
+        self._lbl_white_threshold.pack(anchor="e", pady=(0, 6))
 
-        lbl_f = ctk.CTkLabel(sg, text="Fringe Cleanup", text_color=C["text"], font=ctk.CTkFont(size=13))
-        lbl_f.grid(row=4, column=0, sticky="w", pady=(10, 0))
+        lbl_f = ctk.CTkLabel(adv_f, text="Fringe Cleanup", text_color=C["text"], font=ctk.CTkFont(size=11))
+        lbl_f.pack(anchor="w")
         sl_f = ctk.CTkSlider(
-            sg, from_=0, to=80, variable=self.fringe_var,
+            adv_f, from_=0, to=80, variable=self.fringe_var,
             fg_color=C["border"], progress_color=C["accent"],
             button_color=C["accent"], button_hover_color=C["accent_hover"],
-            command=self._on_fringe,
+            command=self._on_fringe, height=14,
         )
-        sl_f.grid(row=4, column=1, sticky="ew", padx=14, pady=(10, 0))
-        self._lbl_fringe_cleanup = ctk.CTkLabel(
-            sg, text="30", width=36,
-            text_color=C["accent"], font=ctk.CTkFont(size=13, weight="bold"),
-        )
-        self._lbl_fringe_cleanup.grid(row=4, column=2, pady=(10, 0))
-        self.flood_widgets.extend([lbl_f, sl_f, self._lbl_fringe_cleanup])
+        sl_f.pack(fill="x", pady=(2, 0))
+        self._lbl_fringe_cleanup = ctk.CTkLabel(adv_f, text="30", text_color=C["accent"], font=ctk.CTkFont(size=10, weight="bold"))
+        self._lbl_fringe_cleanup.pack(anchor="e", pady=(0, 6))
 
         self.aggressive_cb = ctk.CTkCheckBox(
-            sg, text="Mode Agresif (untuk background bergradasi / shadow)",
-            variable=self.aggressive_var, font=ctk.CTkFont(size=12),
-            text_color=C["text"], fg_color=C["accent"],
-            hover_color=C["accent_hover"], border_color=C["border"],
-            corner_radius=4,
-        )
-        self.aggressive_cb.grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        self.flood_widgets.append(self.aggressive_cb)
-
-        self._toggle_flood_settings()
-
-        # ── Single Actions Card ────────────
-        act_card = self._card(main, "PROSES GAMBAR TUNGGAL")
-
-        btn_row = ctk.CTkFrame(act_card, fg_color="transparent")
-        btn_row.pack(fill="x", padx=16, pady=(0, 14))
-        btn_row.columnconfigure((0, 1, 2), weight=1)
-
-        self.btn_pick = ctk.CTkButton(
-            btn_row, text="Pilih Gambar", command=self.load_and_process,
+            adv_f, text="Mode Agresif", variable=self.aggressive_var,
+            font=ctk.CTkFont(size=11), text_color=C["text"],
             fg_color=C["accent"], hover_color=C["accent_hover"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=40, corner_radius=8,
+            border_color=C["border"], corner_radius=4,
         )
-        self.btn_pick.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.aggressive_cb.pack(anchor="w", pady=(4, 0))
+
+        # Single Image Actions
+        self._section_label(sidebar, "GAMBAR TUNGGAL")
+        
+        self.btn_pick = ctk.CTkButton(
+            sidebar, text="Pilih Gambar", command=self.load_and_process,
+            fg_color=C["accent"], hover_color=C["accent_hover"],
+            font=ctk.CTkFont(size=12, weight="bold"), height=36, corner_radius=6,
+        )
+        self.btn_pick.pack(fill="x", pady=(0, 6))
+
+        act_sub = ctk.CTkFrame(sidebar, fg_color="transparent")
+        act_sub.pack(fill="x", pady=(0, 12))
+        act_sub.columnconfigure((0, 1), weight=1)
 
         self.btn_repreview = ctk.CTkButton(
-            btn_row, text="Preview Ulang", command=self.repreview,
+            act_sub, text="Preview Ulang", command=self.repreview,
             fg_color=C["blue"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=40, corner_radius=8,
+            font=ctk.CTkFont(size=11, weight="bold"), height=32, corner_radius=6,
             state="disabled",
         )
-        self.btn_repreview.grid(row=0, column=1, sticky="ew", padx=4)
+        self.btn_repreview.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
         self.btn_save = ctk.CTkButton(
-            btn_row, text="Simpan Hasil", command=self.save_result,
+            act_sub, text="Simpan PNG", command=self.save_result,
             fg_color=C["border"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=40, corner_radius=8,
+            font=ctk.CTkFont(size=11, weight="bold"), height=32, corner_radius=6,
             state="disabled",
         )
-        self.btn_save.grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        self.btn_save.grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
-        # ── Batch Card ────────────────────
-        batch_card = self._card(main, "PROSES BATCH (BANYAK GAMBAR)")
+        # Batch Section
+        self._section_label(sidebar, "PROSES BATCH (FOLDER)")
 
-        bg_frame = ctk.CTkFrame(batch_card, fg_color="transparent")
-        bg_frame.pack(fill="x", padx=16, pady=(0, 14))
-        bg_frame.columnconfigure(1, weight=1)
-
-        # Batch Name Entry
-        ctk.CTkLabel(bg_frame, text="Nama Batch", text_color=C["text"], font=ctk.CTkFont(size=12, weight="bold")).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(sidebar, text="Nama Batch", text_color=C["dim"], font=ctk.CTkFont(size=11)).pack(anchor="w")
         self.entry_batch_name = ctk.CTkEntry(
-            bg_frame, textvariable=self.batch_name_var,
+            sidebar, textvariable=self.batch_name_var,
             fg_color=C["card_alt"], border_color=C["border"],
-            text_color=C["text"], font=ctk.CTkFont(size=12), height=32,
+            text_color=C["text"], font=ctk.CTkFont(size=11), height=30,
         )
-        self.entry_batch_name.grid(row=0, column=1, sticky="ew", padx=12)
+        self.entry_batch_name.pack(fill="x", pady=(2, 6))
         self.entry_batch_name.bind("<KeyRelease>", self._update_batch_preview)
 
-        # Output Folder Entry
-        ctk.CTkLabel(bg_frame, text="Folder Output", text_color=C["dim"], font=ctk.CTkFont(size=12)).grid(row=1, column=0, sticky="w", pady=(10, 0))
+        ctk.CTkLabel(sidebar, text="Folder Output", text_color=C["dim"], font=ctk.CTkFont(size=11)).pack(anchor="w")
+        out_sub = ctk.CTkFrame(sidebar, fg_color="transparent")
+        out_sub.pack(fill="x", pady=(2, 6))
+        out_sub.columnconfigure(0, weight=1)
+
         ctk.CTkEntry(
-            bg_frame, textvariable=self.output_dir,
+            out_sub, textvariable=self.output_dir,
             fg_color=C["card_alt"], border_color=C["border"],
-            text_color=C["text"], font=ctk.CTkFont(size=12), height=32,
-        ).grid(row=1, column=1, sticky="ew", padx=12, pady=(10, 0))
+            text_color=C["text"], font=ctk.CTkFont(size=11), height=30,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         ctk.CTkButton(
-            bg_frame, text="Pilih...", width=70, height=32,
+            out_sub, text="Pilih", width=50, height=30,
             fg_color=C["border"], hover_color=C["blue"],
-            command=self._choose_output, corner_radius=8,
-        ).grid(row=1, column=2, pady=(10, 0))
+            command=self._choose_output, corner_radius=6,
+        ).grid(row=0, column=1)
 
-        # Batch Naming Preview
         self.lbl_batch_preview = ctk.CTkLabel(
-            bg_frame, text="Contoh hasil: kursi-panjang-1.png, kursi-panjang-2.png...",
-            font=ctk.CTkFont(size=11), text_color=C["dim"], anchor="w"
+            sidebar, text="Contoh: kursi-panjang-1.png...",
+            font=ctk.CTkFont(size=10), text_color=C["dim"], anchor="w"
         )
-        self.lbl_batch_preview.grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 10))
+        self.lbl_batch_preview.pack(fill="x", pady=(0, 8))
 
-        # Batch Action Buttons
-        b_btns = ctk.CTkFrame(bg_frame, fg_color="transparent")
-        b_btns.grid(row=3, column=0, columnspan=3, sticky="ew")
-        b_btns.columnconfigure(0, weight=3)
-        b_btns.columnconfigure(1, weight=1)
+        b_sub = ctk.CTkFrame(sidebar, fg_color="transparent")
+        b_sub.pack(fill="x", pady=(0, 10))
+        b_sub.columnconfigure(0, weight=3)
+        b_sub.columnconfigure(1, weight=1)
 
         self.btn_batch = ctk.CTkButton(
-            b_btns, text="Start Batch (Pilih Folder Asal)", command=self.process_folder,
+            b_sub, text="Start Batch", command=self.process_folder,
             fg_color=C["blue"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=38, corner_radius=8,
+            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=6,
         )
-        self.btn_batch.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.btn_batch.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
         self.btn_cancel_batch = ctk.CTkButton(
-            b_btns, text="Batal Batch", command=self.cancel_batch,
+            b_sub, text="Batal", command=self.cancel_batch,
             fg_color=C["border"], hover_color=C["red_hover"],
-            font=ctk.CTkFont(size=12, weight="bold"), height=38, corner_radius=8,
+            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=6,
             state="disabled",
         )
         self.btn_cancel_batch.grid(row=0, column=1, sticky="ew")
 
-        # ── Progress & Status Footer ──────
-        self.progress = ctk.CTkProgressBar(
-            main, fg_color=C["border"], progress_color=C["accent"],
-            height=6, corner_radius=3,
+        # ════════════════════════════════════════════════════
+        #  RIGHT PREVIEW AREA (MAXIMIZED 75-80% SPACE)
+        # ════════════════════════════════════════════════════
+        preview_area = ctk.CTkFrame(self, fg_color=C["bg"], corner_radius=0)
+        preview_area.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        preview_area.rowconfigure(0, weight=1)
+        preview_area.columnconfigure(0, weight=1)
+
+        # Interactive Split Slider Canvas
+        self.preview_canvas = SplitSliderPreview(preview_area)
+        self.preview_canvas.grid(row=0, column=0, sticky="nsew")
+
+        # Spinner Overlay on Preview Canvas
+        self.spinner_frame = ctk.CTkFrame(preview_area, fg_color=C["card_alt"], corner_radius=10)
+        self.spinner = LoadingSpinner(self.spinner_frame, size=46, color=C["accent"], bg_color=C["card_alt"])
+        self.spinner.pack(pady=(20, 8), padx=40)
+        self.spinner_label = ctk.CTkLabel(
+            self.spinner_frame, text="Menghapus background...",
+            font=ctk.CTkFont(size=12, weight="bold"), text_color=C["accent"]
         )
-        self.progress.pack(fill="x", pady=(4, 6))
+        self.spinner_label.pack(pady=(0, 20), padx=40)
+
+        # ── Ultra-Compact Bottom Progress & Status ──────────
+        status_bar = ctk.CTkFrame(preview_area, fg_color="transparent")
+        status_bar.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+
+        self.progress = ctk.CTkProgressBar(
+            status_bar, fg_color=C["border"], progress_color=C["accent"],
+            height=4, corner_radius=2,
+        )
+        self.progress.pack(fill="x", pady=(0, 4))
         self.progress.set(0)
 
         ctk.CTkLabel(
-            main, textvariable=self.status_text,
-            font=ctk.CTkFont(size=12), text_color=C["dim"], anchor="w",
+            status_bar, textvariable=self.status_text,
+            font=ctk.CTkFont(size=11), text_color=C["dim"], anchor="w",
         ).pack(fill="x")
 
     # ───────────────────────────────────────
     #  UI Helpers
     # ───────────────────────────────────────
 
-    def _card(self, parent, label):
-        card = ctk.CTkFrame(
-            parent, fg_color=C["card"], corner_radius=12,
-            border_width=1, border_color=C["border"],
+    def _section_label(self, parent, text):
+        lbl = ctk.CTkLabel(
+            parent, text=text,
+            font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"],
         )
-        card.pack(fill="x", pady=(0, 12))
-        ctk.CTkLabel(
-            card, text=label,
-            font=ctk.CTkFont(size=11, weight="bold"), text_color=C["dim"],
-        ).pack(anchor="w", padx=16, pady=(12, 6))
-        return card
+        lbl.pack(anchor="w", pady=(8, 4))
+        return lbl
 
     def _on_threshold(self, v):
         v = round(float(v)); self.threshold_var.set(v); self._lbl_white_threshold.configure(text=str(v))
@@ -881,7 +943,7 @@ class WhiteFloodApp(ctk.CTk):
     def _update_batch_preview(self, _=None):
         name = sanitize_filename(self.batch_name_var.get())
         self.lbl_batch_preview.configure(
-            text=f"Contoh hasil: {name}-1.png, {name}-2.png, {name}-3.png..."
+            text=f"Contoh: {name}-1.png, {name}-2.png..."
         )
 
     def _on_mode_change(self, _=None):
@@ -895,17 +957,13 @@ class WhiteFloodApp(ctk.CTk):
 
     def _toggle_flood_settings(self):
         is_flood = self.mode_var.get() == MODE_WHITE
-        # Refinement option only for AI
         if is_flood:
-            self.lbl_refine.grid_remove()
-            self.refine_dropdown.grid_remove()
-            for w in self.flood_widgets:
-                w.grid()
+            self.lbl_refine.pack_forget()
+            self.refine_dropdown.pack_forget()
+            self.adv_section.pack(fill="x", pady=(0, 10))
         else:
-            self.lbl_refine.grid()
-            self.refine_dropdown.grid()
-            for w in self.flood_widgets:
-                w.grid_remove()
+            self.lbl_refine.pack(anchor="w", pady=(8, 4))
+            self.refine_dropdown.pack(fill="x", pady=(0, 10))
 
     def _get_refinement_params(self):
         r = self.refine_var.get()
@@ -913,21 +971,8 @@ class WhiteFloodApp(ctk.CTk):
             return 2, False
         elif r == REFINE_ALPHA_MATTE:
             return 0, True
-        else: # REFINE_ORIGINAL
+        else:
             return 0, False
-
-    def _show_preview(self, original, result):
-        thumb_b = original.copy()
-        thumb_b.thumbnail(PREVIEW_MAX, Image.LANCZOS)
-        self._img_before = ctk.CTkImage(light_image=thumb_b, dark_image=thumb_b, size=thumb_b.size)
-        self.lbl_before.configure(image=self._img_before, text="")
-
-        thumb_a = result.copy()
-        thumb_a.thumbnail(PREVIEW_MAX, Image.LANCZOS)
-        checker = make_checkerboard(thumb_a.width, thumb_a.height, cell=8)
-        checker.paste(thumb_a, (0, 0), thumb_a)
-        self._img_after = ctk.CTkImage(light_image=checker, dark_image=checker, size=checker.size)
-        self.lbl_after.configure(image=self._img_after, text="")
 
     def _set_buttons(self, state):
         self.btn_pick.configure(state=state)
@@ -966,7 +1011,6 @@ class WhiteFloodApp(ctk.CTk):
         is_ai = mode != MODE_WHITE
         internal_model = MODE_MAP.get(mode, "birefnet-massive")
 
-        # Pop-up confirmation if model needs download
         if is_ai and not is_model_downloaded(internal_model):
             ans = messagebox.askyesno(
                 APP_NAME,
@@ -981,9 +1025,8 @@ class WhiteFloodApp(ctk.CTk):
                 self.progress.set(0)
                 return
 
-        # Show visual spinner & progress
-        self.lbl_after.pack_forget()
-        self.spinner_frame.pack(expand=True)
+        # Show Spinner overlay
+        self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.spinner.start()
 
         if is_ai:
@@ -992,7 +1035,6 @@ class WhiteFloodApp(ctk.CTk):
             self.status_text.set("Menghapus background (WhiteFlood)...")
         self.progress.set(0.15)
 
-        # Snapshot parameters
         th = self.threshold_var.get()
         fr = self.fringe_var.get()
         ag = self.aggressive_var.get()
@@ -1035,13 +1077,13 @@ class WhiteFloodApp(ctk.CTk):
 
     def _on_process_ok(self):
         self.spinner.stop()
-        self.spinner_frame.pack_forget()
-        self.lbl_after.pack(expand=True)
+        self.spinner_frame.place_forget()
 
         self._processing = False
         self.progress.set(1.0)
         self.progress.configure(progress_color=C["accent"])
-        self._show_preview(self._original, self._result)
+
+        self.preview_canvas.set_images(self._original, self._result)
 
         self._set_buttons("normal")
         self.btn_repreview.configure(state="normal")
@@ -1054,13 +1096,12 @@ class WhiteFloodApp(ctk.CTk):
         mode = self.mode_var.get()
         self.status_text.set(
             f"[{mode}] Selesai: {sz[0]}×{sz[1]} px. "
-            f"Klik 'Simpan Hasil' untuk menyimpan PNG transparan."
+            f"Geser pembatas untuk membandingkan → Klik 'Simpan PNG'."
         )
 
     def _on_process_err(self, err):
         self.spinner.stop()
-        self.spinner_frame.pack_forget()
-        self.lbl_after.pack(expand=True)
+        self.spinner_frame.place_forget()
 
         self._processing = False
         self.progress.set(0)
