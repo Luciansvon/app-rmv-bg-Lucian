@@ -1,110 +1,74 @@
-# WhiteFlood BG Remover & Upscaler v2.5.0
+<p align="center">
+  <img src="logo.png" alt="WhiteFlood logo" width="160">
+</p>
 
-**Built by Bima Chakti © 2026**
+<h1 align="center">WhiteFlood BG Remover &amp; Upscaler</h1>
 
-Aplikasi Windows Desktop untuk menghapus background dan memperbesar foto produk furnitur.
-Output selalu PNG transparan dengan dimensi presisi 100%.
+<p align="center">Windows desktop processing tools for furniture product photos and catalogs.</p>
 
----
+<p align="center"><strong>Version 2.5.0</strong> · Built by Bima Chakti</p>
 
-## Fitur Utama
+## What it does
 
-### ✂️ Remove Background (Hapus Background)
-- **5 Mode AI**:
-  - 🪑 Furniture Quality — Rekomendasi utama untuk foto produk furnitur, kayu, & katalog
-  - ⚡ Fast — Proses cepat untuk gambar biasa
-  - 👤 Person — Khusus foto orang, pakaian, & rambut
-  - 🔍 High Detail — Khusus resolusi tinggi & ukiran halus
-  - 🌊 White Background — Instan tanpa AI untuk background putih polos
-- **Ketajaman Tepi**: Original, Soft (Pinggiran Halus), Alpha Matte (Deteksi Rambut)
-- **Pengaturan Lanjutan**: White Threshold, Fringe Cleanup, Mode Agresif
+WhiteFlood provides two independent tools:
 
-### 🔍 Upscale (Perbesar Foto)
-- Perbesaran **2x**, **4x**, atau **8x**
-- Menggunakan backend **Upscayl NCNN Vulkan** untuk tile stitching yang konsisten
-- PNG/RGBA diproses langsung oleh engine; kanal alpha tidak lagi dipisah lewat JPEG sementara
-- Skala 2x/4x dikirim langsung tanpa resize perantara
-- Skala 8x memakai 4x AI lalu resize Lanczos 2x
+- **Remove Background** — local AI or white-background flood removal, with exact input dimensions and RGBA PNG output.
+- **Upscale** — 2x, 4x, or 8x enlargement through the bundled Upscayl NCNN / Real-ESRGAN backend.
 
-### Fitur Umum
-- **Preview Before/After** — Split-slider interaktif gaya Upscayl dengan cache bitmap agar drag lebih ringan
-- **Batch Processing** — Proses satu folder sekaligus dengan penamaan otomatis
-- **Metadata Preserved** — DPI / ICC Profile / EXIF dipertahankan
-- **RAM Monitor** — Tampilan penggunaan memori real-time
-- **Progress Model** — Persentase download model AI tampil di dalam aplikasi
-- **Dark Theme** — UI modern gelap dengan CustomTkinter
+## Main features
 
-## Aturan Dimensi
+- Cached Before/After split-slider preview for smoother dragging.
+- Model download percentage shown inside the app.
+- Single-image and folder batch processing.
+- Collision-safe output names.
+- PNG transparency and supported metadata preserved.
+- Memory usage shown as process RSS while the app is working.
+- Hidden launcher path so users do not see a terminal window.
 
-Dimensi output dijaga ketat:
+## Dimension contract
 
 | Tool | Input | Output |
-|---|---|---|
-| Remove BG | 2048×2048 px | 2048×2048 px (sama persis) |
-| Upscale 2x | 2048×2048 px | 4096×4096 px |
-| Upscale 4x | 2048×2048 px | 8192×8192 px |
-| Upscale 8x | 2048×2048 px | 16384×16384 px |
+|---|---:|---:|
+| Remove Background | 2048 x 2048 | 2048 x 2048 |
+| Upscale 2x | 2048 x 2048 | 4096 x 4096 |
+| Upscale 4x | 2048 x 2048 | 8192 x 8192 |
+| Upscale 8x | 2048 x 2048 | 16384 x 16384 |
 
-Tidak ada resize atau crop yang tidak diinginkan.
+No unintended crop or resize is allowed.
 
-## Jalankan dari Source Tanpa Membuat EXE
+## Download the release
 
-1. Install **Python 3.11** atau lebih baru
-2. Extract folder ini
-3. Install dependency satu kali: `python -m pip install -r requirements.txt`
-4. Double-click `RUN_APP.vbs` agar aplikasi jalan tanpa console
+Download the standalone Windows executable from the [WhiteFlood v2.5.0 release](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.5.0). The release executable does not require Python. AI background-removal models may be downloaded once on first use, with progress displayed in the app.
 
-`RUN_APP.bat` hanya meneruskan ke `RUN_APP.vbs`. Jika folder `dist` memiliki EXE hasil build, launcher akan memilih EXE tersebut lebih dulu.
+## Run from source
 
-## Membuat .EXE Windows
+1. Install Python 3.11 or newer.
+2. From this folder, install dependencies once:
 
-Double-click: `BUILD_EXE.bat`
+   ```powershell
+   python -m pip install -r requirements.txt
+   ```
 
-Setelah selesai, file ada di: `dist\WhiteFlood_BG_Remover.exe`
+3. Double-click `RUN_APP.vbs` to launch without a visible console.
 
-> File EXE besar (~300-500 MB) karena berisi AI model dan semua library. Ini normal, bukan virus.
+`RUN_APP.bat` forwards to `RUN_APP.vbs`. When `dist/WhiteFlood_BG_Remover.exe` exists, the launcher uses that executable first.
 
-## Cara Pakai
+## Build
 
-### Satu Gambar — Remove BG
-1. Pilih alat **✂️ Hapus BG**
-2. Pilih mode AI yang sesuai
-3. Klik **Pilih Gambar**
-4. Hasil langsung muncul di preview (split before/after)
-5. Ubah setting jika perlu, lalu klik **Proses Ulang**
-6. Klik **Simpan Hasil**
+Double-click `BUILD_EXE.bat`. The script creates a PyInstaller `--onefile --windowed` executable at:
 
-### Satu Gambar — Upscale
-1. Pilih alat **🔍 Upscale**
-2. Klik **Pilih Gambar** — gambar ditampilkan tanpa auto-proses
-3. Pilih skala **2x**, **4x**, atau **8x**
-4. Klik **Proses Upscale**
-5. Klik **Simpan Hasil**
-
-### Batch (Banyak Gambar)
-1. Pilih alat yang diinginkan (Hapus BG atau Upscale)
-2. Isi **Nama Batch** (contoh: kursi-panjang)
-3. Pilih **Folder Output**
-4. Klik **Mulai Batch**, lalu pilih folder sumber gambar
-5. Semua PNG/JPG/JPEG/WEBP/BMP di folder akan diproses
-6. Hasil disimpan sebagai: `kursi-panjang-1.png`, `kursi-panjang-2.png`, dst.
-
-## Dependencies
-
-```
-Pillow>=10.0
-numpy>=1.24
-customtkinter>=5.2
-rembg[cpu]>=2.0
-psutil>=5.9
+```text
+dist/WhiteFlood_BG_Remover.exe
 ```
 
-## Batasan
+The build script cleans the local `build/`, `dist/`, and generated `.spec` file before rebuilding.
 
-- Mode White Background hanya bekerja pada background putih/abu-abu polos
-- Model AI pertama kali perlu diunduh (~150-250 MB per model)
-- Upscale 8x pada gambar besar membutuhkan RAM dan ruang disk yang lebih besar
+## Supported input files
+
+PNG, JPG, JPEG, WEBP, and BMP.
+
+The first AI background-removal run may need an internet connection to download a model. Image processing remains local.
 
 ---
 
-**© 2026 Bima Chakti**
+© 2026 Bima Chakti

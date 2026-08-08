@@ -1,52 +1,109 @@
-# WhiteFlood BG Remover & Upscaler v2.5.0
+<p align="center">
+  <img src="review-temp/WhiteFlood_BG_Remover_App/logo.png" alt="WhiteFlood logo" width="180">
+</p>
 
-**Built by Bima Chakti © 2026 Bima Chakti**
+<h1 align="center">WhiteFlood BG Remover &amp; Upscaler</h1>
 
-Aplikasi desktop Windows untuk fotografi produk furnitur dan katalog kantor (high-resolution furniture product photography).
+<p align="center">
+  A local-first Windows desktop tool for furniture product photography and office catalogs.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.5.0"><img src="https://img.shields.io/github/v/release/Luciansvon/app-rmv-bg-Lucian?label=latest%20release" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="Windows">
+  <img src="https://img.shields.io/badge/processing-local%20first-2E8B57" alt="Local-first processing">
+</p>
+
+WhiteFlood combines two independent image tools in one focused workflow: remove a background without changing the original pixel dimensions, or upscale a product photo to 2x, 4x, or 8x while preserving PNG transparency.
+
+## Features
+
+### Remove Background
+
+- AI modes for furniture, general images, people, high-detail objects, and plain white backgrounds.
+- Local processing; product photos are not uploaded to an external API.
+- Output dimensions stay exactly the same as the input.
+- PNG output with an RGBA alpha channel.
+- Edge refinement controls for soft edges, fine details, and alpha matting.
+
+### Upscale
+
+- 2x, 4x, and 8x output scales.
+- Upscayl NCNN / Real-ESRGAN backend for the AI upscale pass.
+- PNG/RGBA input stays in the PNG pipeline, including transparency.
+- 8x uses a 4x AI pass followed by a Lanczos 2x resize.
+- Exact output dimensions are checked before saving.
+
+### Product workflow
+
+- Before/After split-slider preview with cached display bitmaps for smoother dragging.
+- Visible process phase and percentage for AI model downloads.
+- Single-image and folder batch processing.
+- Collision-safe batch filenames.
+- DPI, ICC profile, and EXIF metadata are preserved when supported.
+- RSS memory usage is visible in the app while processing.
+
+## Download
+
+For the easiest setup, download the Windows executable from the latest release:
+
+**[Download WhiteFlood BG Remover v2.5.0](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.5.0/WhiteFlood_BG_Remover.exe)**
+
+The release asset is a one-file, windowed build. Python is not required for the release executable. On the first AI background-removal run, the selected model may need to be downloaded once; the progress is shown inside the app.
+
+> Windows SmartScreen may show a warning because this executable is not code-signed yet.
+
+## Run from source
+
+1. Install Python 3.11 or newer.
+2. Install the runtime dependencies once:
+
+   ```powershell
+   python -m pip install -r review-temp/WhiteFlood_BG_Remover_App/requirements.txt
+   ```
+
+3. Double-click [`RUN_APP.vbs`](review-temp/WhiteFlood_BG_Remover_App/RUN_APP.vbs) to launch without a visible terminal.
+
+`RUN_APP.bat` is a short entry point that forwards to the hidden launcher. If a built executable exists in `dist`, the launcher uses it first.
+
+## Build the Windows executable
+
+From `review-temp/WhiteFlood_BG_Remover_App`:
+
+```powershell
+.\BUILD_EXE.bat
+```
+
+The build uses PyInstaller `--onefile --windowed` and writes the executable to `dist/WhiteFlood_BG_Remover.exe`. The build script cleans the local `build/`, `dist/`, and generated `.spec` file before rebuilding.
+
+## Output contract
+
+| Tool | Input | Output |
+|---|---:|---:|
+| Remove Background | 2048 x 2048 | 2048 x 2048 |
+| Upscale 2x | 2048 x 2048 | 4096 x 4096 |
+| Upscale 4x | 2048 x 2048 | 8192 x 8192 |
+| Upscale 8x | 2048 x 2048 | 16384 x 16384 |
+
+## Privacy and limitations
+
+- Images stay on the local computer during processing.
+- The first use of an AI background-removal mode may require an internet connection to download its model.
+- Upscale 8x and large source images require more RAM, GPU resources, and disk space.
+- The bundled release was built on Windows; GPU/Vulkan support can vary by computer.
+
+## Documentation
+
+- [`AGENTS.md`](AGENTS.md) — repository rules and safe-change boundaries.
+- [`user.md`](user.md) — product requirements and constraints.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — active source architecture.
+- [`docs/ERROR_SOLUTIONS.md`](docs/ERROR_SOLUTIONS.md) — evidence-based bug fixes.
+- [`docs/WORKLOG.md`](docs/WORKLOG.md) — implementation and verification history.
+
+## License
+
+Project-specific licensing has not been declared yet. Review third-party notices before redistributing the application.
 
 ---
 
-## 🌟 Fitur Utama (v2.5.0)
-
-1. **✂️ Remove Background (Hapus Background)**
-   - Menggunakan AI `birefnet-massive` (Mode *Furniture Quality*).
-   - **Non-Negotiable Rules**: Tanpa crop, tanpa resize, 100% dimensi piksel asli dipertahankan.
-   - Masker Alpha Anti-Aliased halus (tanpa gerigi / tajem-tajem).
-
-2. **🔍 Upscale Image (Pembesar Gambar 2x, 4x & 8x)**
-   - Alat terpisah independen (tidak pernah berjalan otomatis beriringan).
-   - **Upscayl NCNN Pipeline**: Backend resmi Upscayl menangani tile stitching dan kanal transparansi PNG secara langsung.
-   - Skala 2x/4x dikirim langsung ke engine tanpa resize perantara yang menurunkan detail.
-   - Skala 8x memakai 4x AI lalu resize Lanczos 2x agar output besar tetap stabil.
-
-3. **🎨 Antarmuka Upscayl-Style & Sidebar Ramping**
-   - Layar preview jumbo dengan **Interactive Split-Slider (Geser Kanan-Kiri)** yang memakai cache bitmap agar drag tidak mengulang resize gambar sumber.
-   - Sidebar kiri sekitar 304px berisi alat aktif, kontrol, file, batch, dan aksi utama dengan hierarchy yang lebih jelas.
-   - Status bar di dalam aplikasi menampilkan fase proses dan persentase download model.
-   - Kredit pengembang visual: `Built by Bima Chakti © 2026 Bima Chakti`.
-
-4. **⚡ Manajemen RAM dan engine berat**
-   - Konfigurasi `ONNX SessionOptions` (`enable_cpu_mem_arena = False`) mengembalikan RAM langsung ke Windows.
-   - Pelepasan memori safe-release (`del old_session` & `gc.collect()`) saat berpindah alat.
-   - UI menampilkan RSS proses saat berjalan; kebutuhan aktual bergantung pada model, resolusi, dan hardware komputer.
-
-5. **📁 Penamaan Batch & Anti-Tertimpa**
-   - Nama batch kustom (contoh `kursi-panjang`).
-   - Penomoran otomatis `kursi-panjang-1.png`, `kursi-panjang-2.png`.
-   - Aman dari penimpaan file lama (*collision safety*).
-
----
-
-## 🚀 Cara Menjalankan Aplikasi
-
-Untuk source Python, install dependency sekali dengan `python -m pip install -r requirements.txt`, lalu double-click `RUN_APP.vbs`. Launcher ini memakai `pythonw.exe` agar console tidak muncul. `RUN_APP.bat` tetap tersedia sebagai entry point singkat. Untuk dibagikan ke komputer kantor, gunakan `dist\WhiteFlood_BG_Remover.exe` hasil build `--windowed`.
-
----
-
-## Dokumentasi Repo
-
-- [`AGENTS.md`](AGENTS.md): aturan kerja dan batas perubahan.
-- [`user.md`](user.md): aturan produk WhiteFlood.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): arsitektur source aktif dan batas sistem.
-- [`docs/ERROR_SOLUTIONS.md`](docs/ERROR_SOLUTIONS.md): error terverifikasi, root cause, dan bukti fix.
-- [`docs/WORKLOG.md`](docs/WORKLOG.md): riwayat pekerjaan, keputusan, dan verifikasi.
+Built by Bima Chakti · © 2026 Bima Chakti
