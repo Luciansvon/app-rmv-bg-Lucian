@@ -13,19 +13,22 @@ Aplikasi desktop Windows untuk fotografi produk furnitur dan katalog kantor (hig
    - **Non-Negotiable Rules**: Tanpa crop, tanpa resize, 100% dimensi piksel asli dipertahankan.
    - Masker Alpha Anti-Aliased halus (tanpa gerigi / tajem-tajem).
 
-2. **🔍 Upscale Image (Pembesar Gambar 2x & 4x)**
+2. **🔍 Upscale Image (Pembesar Gambar 2x, 4x & 8x)**
    - Alat terpisah independen (tidak pernah berjalan otomatis beriringan).
-   - **Alpha-Safe Pipeline**: Kanal transparansi (Alpha) diperbesar dengan algoritma presisi Lanczos, menjaga kaki meja tipis & ukiran 100% utuh tanpa distorsi.
+   - **Upscayl NCNN Pipeline**: Backend resmi Upscayl menangani tile stitching dan kanal transparansi PNG secara langsung.
+   - Skala 2x/4x dikirim langsung ke engine tanpa resize perantara yang menurunkan detail.
+   - Skala 8x memakai 4x AI lalu resize Lanczos 2x agar output besar tetap stabil.
 
 3. **🎨 Antarmuka Upscayl-Style & Sidebar Ramping**
-   - Layar preview jumbo mengisi 80% layar dengan **Interactive Split-Slider (Geser Kanan-Kiri)**.
-   - Sidebar samping kiri ramping (~290px) terinspirasi dari sidebar ChatGPT desktop.
+   - Layar preview jumbo dengan **Interactive Split-Slider (Geser Kanan-Kiri)** yang memakai cache bitmap agar drag tidak mengulang resize gambar sumber.
+   - Sidebar kiri sekitar 304px berisi alat aktif, kontrol, file, batch, dan aksi utama dengan hierarchy yang lebih jelas.
+   - Status bar di dalam aplikasi menampilkan fase proses dan persentase download model.
    - Kredit pengembang visual: `Built by Bima Chakti © 2026 Bima Chakti`.
 
-4. **⚡ Manajemen & Bebas RAM Spike 12GB**
+4. **⚡ Manajemen RAM dan engine berat**
    - Konfigurasi `ONNX SessionOptions` (`enable_cpu_mem_arena = False`) mengembalikan RAM langsung ke Windows.
    - Pelepasan memori safe-release (`del old_session` & `gc.collect()`) saat berpindah alat.
-   - Pemakaian RAM terpantau stabil di kisaran **1.2 GB - 1.8 GB**.
+   - UI menampilkan RSS proses saat berjalan; kebutuhan aktual bergantung pada model, resolusi, dan hardware komputer.
 
 5. **📁 Penamaan Batch & Anti-Tertimpa**
    - Nama batch kustom (contoh `kursi-panjang`).
@@ -36,4 +39,14 @@ Aplikasi desktop Windows untuk fotografi produk furnitur dan katalog kantor (hig
 
 ## 🚀 Cara Menjalankan Aplikasi
 
-Double click file `RUN_APP.bat` di folder aplikasi.
+Untuk source Python, install dependency sekali dengan `python -m pip install -r requirements.txt`, lalu double-click `RUN_APP.vbs`. Launcher ini memakai `pythonw.exe` agar console tidak muncul. `RUN_APP.bat` tetap tersedia sebagai entry point singkat. Untuk dibagikan ke komputer kantor, gunakan `dist\WhiteFlood_BG_Remover.exe` hasil build `--windowed`.
+
+---
+
+## Dokumentasi Repo
+
+- [`AGENTS.md`](AGENTS.md): aturan kerja dan batas perubahan.
+- [`user.md`](user.md): aturan produk WhiteFlood.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): arsitektur source aktif dan batas sistem.
+- [`docs/ERROR_SOLUTIONS.md`](docs/ERROR_SOLUTIONS.md): error terverifikasi, root cause, dan bukti fix.
+- [`docs/WORKLOG.md`](docs/WORKLOG.md): riwayat pekerjaan, keputusan, dan verifikasi.

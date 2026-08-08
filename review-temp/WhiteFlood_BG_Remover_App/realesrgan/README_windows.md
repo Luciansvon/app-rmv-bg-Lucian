@@ -40,3 +40,12 @@ This executable file is **portable** and includes all the binaries and models re
 Note that it may introduce block inconsistency (and also generate slightly different results from the PyTorch implementation), because this executable file first crops the input image into several tiles, and then processes them separately, finally stitches together.
 
 This executable file is based on the wonderful [Tencent/ncnn](https://github.com/Tencent/ncnn) and [realsr-ncnn-vulkan](https://github.com/nihui/realsr-ncnn-vulkan) by [nihui](https://github.com/nihui).
+
+## WhiteFlood integration
+
+The bundled `realesrgan-ncnn-vulkan.exe` is the Upscayl NCNN backend from
+https://github.com/upscayl/upscayl-ncnn. WhiteFlood passes the model path,
+model name, requested scale, and PNG format explicitly. Tile sizing stays on
+the backend's GPU-aware automatic policy, and RGBA input/output is preserved
+by the backend. WhiteFlood's 8x option runs the supported 4x AI pass first,
+then applies a Lanczos 2x resize to reach the final output dimensions.

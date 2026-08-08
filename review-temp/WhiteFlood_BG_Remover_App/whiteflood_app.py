@@ -2,7 +2,7 @@
 WhiteFlood BG Remover & Upscaler v2.5.0
 Built by Bima Chakti © 2026 Bima Chakti
 Aplikasi Windows Desktop untuk Foto Produk Furnitur (PNG Transparan).
-Dual Tools: Remove Background (Dimensi 100% Presisi) & Upscale (2x/4x Alpha-Safe).
+Dual Tools: Remove Background (Dimensi 100% Presisi) & Upscale (2x/4x/8x via Upscayl NCNN).
 Layout: Upscayl-Style Interactive Split-Slider Preview + Narrow Sidebar (~290px).
 """
 
@@ -13,6 +13,7 @@ import threading
 import importlib.util
 import re
 import math
+import time
 from pathlib import Path
 from collections import deque
 
@@ -83,16 +84,18 @@ _rembg_model_name = None
 
 APP_NAME = "WhiteFlood BG Remover"
 VERSION = "2.5.0"
-DEVELOPER_CREDIT = "Built by Bima Chakti\n© 2026 Bima Chakti"
+DEVELOPER_CREDIT = "Built by Bima Chakti\n\u00a9 2026 Bima Chakti"
 
 TOOL_REMOVE_BG = "remove_bg"
 TOOL_UPSCALE = "upscale"
+UPSCAYL_MODEL = "realesrgan-x4plus"
+UPSCAYL_AI_MAX_SCALE = 4
 
-MODE_FURNITURE = "🪑  Furniture Quality"
-MODE_FAST = "⚡  Fast"
-MODE_PERSON = "👤  Person"
-MODE_HIGH_DETAIL = "🔍  High Detail"
-MODE_WHITE = "🌊  White Background"
+MODE_FURNITURE = "Furniture Quality"
+MODE_FAST = "Fast"
+MODE_PERSON = "Person"
+MODE_HIGH_DETAIL = "High Detail"
+MODE_WHITE = "White Background"
 
 MODE_MAP = {
     MODE_FURNITURE: "birefnet-massive",
@@ -102,11 +105,11 @@ MODE_MAP = {
 }
 
 MODE_DESC_MAP = {
-    MODE_FURNITURE: "🪑 Furniture Quality (Rekomendasi Utama — Foto Produk Furnitur, Kayu, & Katalog)",
-    MODE_FAST: "⚡ Fast (Proses Cepat untuk Gambar Biasa)",
-    MODE_PERSON: "👤 Person (Khusus Foto Orang, Manusia, Pakaian, & Rambut)",
-    MODE_HIGH_DETAIL: "🔍 High Detail (Khusus Resolusi Tinggi & Ukiran Halus)",
-    MODE_WHITE: "🌊 White Background (Instan Tanpa AI / Tanpa Internet untuk Background Polos)",
+    MODE_FURNITURE: "Rekomendasi utama untuk foto furnitur, kayu, dan katalog.",
+    MODE_FAST: "Proses lebih cepat untuk gambar biasa.",
+    MODE_PERSON: "Untuk foto orang, pakaian, dan rambut.",
+    MODE_HIGH_DETAIL: "Untuk resolusi tinggi dan ukiran halus.",
+    MODE_WHITE: "Lokal tanpa AI untuk background putih atau abu-abu polos.",
 }
 
 REFINE_ORIGINAL = "Original (Rekomendasi)"
@@ -114,22 +117,22 @@ REFINE_SOFT = "Soft (Pinggiran Halus)"
 REFINE_ALPHA_MATTE = "Alpha Matte (Deteksi Rambut)"
 
 C = {
-    "bg":           "#0f0f18",
-    "card":         "#161626",
-    "card_alt":     "#11111d",
-    "border":       "#222238",
-    "accent":       "#e94560",
-    "accent_hover": "#d63851",
-    "blue":         "#1e3a8a",
-    "blue_hover":   "#1d4ed8",
-    "text":         "#f1f5f9",
-    "dim":          "#8e8ea0",
-    "green":        "#22c55e",
-    "green_dark":   "#16a34a",
-    "purple":       "#a855f7",
-    "purple_hover": "#9333ea",
-    "red":          "#ef4444",
-    "red_hover":    "#dc2626",
+    "bg":           "#0d1014",
+    "card":         "#151a20",
+    "card_alt":     "#10151a",
+    "border":       "#283039",
+    "accent":       "#ef5b73",
+    "accent_hover": "#d94d64",
+    "blue":         "#27323d",
+    "blue_hover":   "#354451",
+    "text":         "#f3f1ed",
+    "dim":          "#8f9aa3",
+    "green":        "#61bd9b",
+    "green_dark":   "#469579",
+    "purple":       "#d39a78",
+    "purple_hover": "#b77e61",
+    "red":          "#d85e6a",
+    "red_hover":    "#b94b57",
 }
 
 NEIGHBORS_8 = [(-1, -1), (-1, 0), (-1, 1),
@@ -158,7 +161,7 @@ def show_splash(parent):
         pass
 
     lbl_title = ctk.CTkLabel(
-        splash, text="◆  WhiteFlood BG Remover",
+        splash, text="WHITEFLOOD",
         font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
         text_color=C["accent"],
     )
@@ -213,13 +216,20 @@ class LoadingSpinner(ctk.CTkCanvas):
 
 
 class SplitSliderPreview(ctk.CTkCanvas):
-    """Interactive Upscayl-style split-slider image comparison widget."""
+    """Cached split-slider preview that keeps mouse drag work lightweight."""
     def __init__(self, parent, **kwargs):
         super().__init__(parent, bg=C["card_alt"], highlightthickness=0, **kwargs)
         self.slider_pos = 0.5
         self.original_img = None
         self.result_img = None
         self._dragging = False
+        self._display_original = None
+        self._display_result = None
+        self._display_size = None
+        self._display_offset = (0, 0)
+        self._redraw_job = None
+        self._resize_job = None
+        self._comp_tk = None
 
         self.bind("<Configure>", self._on_resize)
         self.bind("<Button-1>", self._on_click)
@@ -229,14 +239,21 @@ class SplitSliderPreview(ctk.CTkCanvas):
     def set_images(self, original, result):
         self.original_img = original
         self.result_img = result
+        self._invalidate_display_cache()
         self.redraw()
 
     def _on_resize(self, event):
+        if self._resize_job is None:
+            self._resize_job = self.after(60, self._flush_resize)
+
+    def _flush_resize(self):
+        self._resize_job = None
+        self._invalidate_display_cache()
         self.redraw()
 
     def _on_click(self, event):
-        self._update_slider_from_mouse(event.x)
         self._dragging = True
+        self._update_slider_from_mouse(event.x)
 
     def _on_drag(self, event):
         if self._dragging:
@@ -244,12 +261,59 @@ class SplitSliderPreview(ctk.CTkCanvas):
 
     def _on_release(self, event):
         self._dragging = False
+        self._schedule_redraw(delay=0)
 
     def _update_slider_from_mouse(self, mouse_x):
         w = self.winfo_width()
         if w > 20:
             self.slider_pos = max(0.02, min(0.98, mouse_x / float(w)))
-            self.redraw()
+            self._schedule_redraw()
+
+    def _schedule_redraw(self, delay=16):
+        if self._redraw_job is None:
+            self._redraw_job = self.after(delay, self._flush_redraw)
+
+    def _flush_redraw(self):
+        self._redraw_job = None
+        self.redraw()
+
+    def _invalidate_display_cache(self):
+        self._display_original = None
+        self._display_result = None
+        self._display_size = None
+        self._display_offset = (0, 0)
+
+    def _prepare_display_cache(self, width, height):
+        if not self.original_img or width < 30 or height < 30:
+            return False
+
+        ref_img = self.result_img if self.result_img else self.original_img
+        ref_w, ref_h = ref_img.size
+        scale = min(width / ref_w, height / ref_h)
+        disp_w = max(1, int(ref_w * scale))
+        disp_h = max(1, int(ref_h * scale))
+        offset_x = (width - disp_w) // 2
+        offset_y = (height - disp_h) // 2
+
+        original_display = self.original_img.resize((disp_w, disp_h), Image.LANCZOS)
+        if original_display.mode != "RGBA":
+            original_display = original_display.convert("RGBA")
+
+        if self.result_img:
+            result_display = self.result_img.resize((disp_w, disp_h), Image.LANCZOS)
+            if result_display.mode != "RGBA":
+                result_display = result_display.convert("RGBA")
+            checker = make_checkerboard(disp_w, disp_h, cell=10)
+            checker.paste(result_display, (0, 0), result_display)
+            result_display = checker
+        else:
+            result_display = original_display
+
+        self._display_original = original_display
+        self._display_result = result_display
+        self._display_size = (disp_w, disp_h)
+        self._display_offset = (offset_x, offset_y)
+        return True
 
     def redraw(self):
         self.delete("all")
@@ -264,27 +328,14 @@ class SplitSliderPreview(ctk.CTkCanvas):
             )
             return
 
-        # Use result size as the reference for display when available (Upscale mode)
-        ref_img = self.result_img if self.result_img else self.original_img
-        ref_w, ref_h = ref_img.size
-        scale = min(w / ref_w, h / ref_h)
-        disp_w = max(1, int(ref_w * scale))
-        disp_h = max(1, int(ref_h * scale))
+        if self._display_size is None:
+            if not self._prepare_display_cache(w, h):
+                return
 
-        offset_x = (w - disp_w) // 2
-        offset_y = (h - disp_h) // 2
-
-        orig_disp = self.original_img.resize((disp_w, disp_h), Image.LANCZOS)
-        if orig_disp.mode != "RGBA":
-            orig_disp = orig_disp.convert("RGBA")
-
-        if self.result_img:
-            res_disp = self.result_img.resize((disp_w, disp_h), Image.LANCZOS)
-            checker = make_checkerboard(disp_w, disp_h, cell=10)
-            checker.paste(res_disp, (0, 0), res_disp)
-            res_disp = checker
-        else:
-            res_disp = orig_disp
+        disp_w, disp_h = self._display_size
+        offset_x, offset_y = self._display_offset
+        orig_disp = self._display_original
+        res_disp = self._display_result
 
         split_x = int(self.slider_pos * disp_w)
         split_x = max(0, min(disp_w, split_x))
@@ -304,14 +355,23 @@ class SplitSliderPreview(ctk.CTkCanvas):
         self.create_line(line_x, offset_y, line_x, offset_y + disp_h, fill=C["accent"], width=3)
 
         handle_y = offset_y + (disp_h // 2)
-        self.create_rectangle(line_x - 14, handle_y - 18, line_x + 14, handle_y + 18, fill=C["accent"], outline=C["text"], width=1)
-        self.create_text(line_x, handle_y, text="◄  ►", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+        self.create_rectangle(line_x - 20, handle_y - 18, line_x + 20, handle_y + 18, fill=C["accent"], outline=C["text"], width=1)
+        self.create_text(line_x, handle_y, text="DRAG", fill="#ffffff", font=("Segoe UI", 8, "bold"))
 
-        self.create_rectangle(offset_x + 10, offset_y + 10, offset_x + 110, offset_y + 32, fill="#12121f", outline=C["border"], width=1)
-        self.create_text(offset_x + 60, offset_y + 21, text="GAMBAR ASLI", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+        self.create_rectangle(offset_x + 10, offset_y + 10, offset_x + 108, offset_y + 32, fill="#12171c", outline=C["border"], width=1)
+        self.create_text(offset_x + 59, offset_y + 21, text="ASLI", fill="#ffffff", font=("Segoe UI", 9, "bold"))
 
-        self.create_rectangle(offset_x + disp_w - 130, offset_y + 10, offset_x + disp_w - 10, offset_y + 32, fill="#12121f", outline=C["border"], width=1)
-        self.create_text(offset_x + disp_w - 70, offset_y + 21, text="HASIL PROSES", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+        self.create_rectangle(offset_x + disp_w - 108, offset_y + 10, offset_x + disp_w - 10, offset_y + 32, fill="#12171c", outline=C["border"], width=1)
+        self.create_text(offset_x + disp_w - 59, offset_y + 21, text="HASIL", fill="#ffffff", font=("Segoe UI", 9, "bold"))
+
+    def destroy(self):
+        for job in (self._redraw_job, self._resize_job):
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except Exception:
+                    pass
+        super().destroy()
 
 
 class CollapsibleFrame(ctk.CTkFrame):
@@ -363,6 +423,59 @@ def metadata_for_save(img):
     return kw
 
 
+class _ModelDownloadProgress:
+    """Small pooch progress adapter that reports download bytes to the UI."""
+
+    def __init__(self, callback, model_name):
+        self.callback = callback
+        self.model_name = model_name
+        self.total = 0
+        self.downloaded = 0
+        self._last_percent = -1
+        self._last_emit_at = 0.0
+        self._lock = threading.Lock()
+
+    def _emit(self, force=False):
+        if not self.callback or self.total <= 0:
+            return
+
+        percent = min(100, max(0, int((self.downloaded / self.total) * 100)))
+        now = time.monotonic()
+        if not force and percent == self._last_percent and now - self._last_emit_at < 0.15:
+            return
+        if not force and now - self._last_emit_at < 0.15:
+            return
+
+        self._last_percent = percent
+        self._last_emit_at = now
+        self.callback({
+            "kind": "model_download",
+            "model": self.model_name,
+            "percent": percent,
+            "downloaded": self.downloaded,
+            "total": self.total,
+        })
+
+    def update(self, amount):
+        with self._lock:
+            self.downloaded = min(
+                self.total,
+                self.downloaded + max(0, int(amount)),
+            )
+            self._emit()
+
+    def reset(self):
+        with self._lock:
+            self.downloaded = 0
+            self._emit(force=True)
+
+    def close(self):
+        with self._lock:
+            if self.total > 0:
+                self.downloaded = self.total
+            self._emit(force=True)
+
+
 # ═══════════════════════════════════════════════════════════
 #  AI Background Removal Engine
 # ═══════════════════════════════════════════════════════════
@@ -386,6 +499,7 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
 
     from rembg import new_session
     import onnxruntime as ort
+    import pooch
 
     # Configure ONNX SessionOptions: disable arena memory allocation to release RAM back to OS
     opts = ort.SessionOptions()
@@ -399,51 +513,88 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
         try:
             if status_cb:
                 if attempt > 1:
-                    status_cb(f"⬇  Mencoba ulang unduhan model AI '{model_name}' ({attempt}/{max_retries})…")
+                    status_cb(f"Mencoba ulang unduhan model '{model_name}' ({attempt}/{max_retries})")
                 else:
-                    status_cb(f"⬇  Mengunduh model AI '{model_name}'… (cuma sekali, mohon tunggu)")
+                    status_cb(f"Menyiapkan unduhan model '{model_name}'")
 
-            _rembg_session = new_session(model_name, sess_options=opts)
+            original_retrieve = pooch.retrieve
+
+            def retrieve_with_ui_progress(*args, **kwargs):
+                if status_cb and kwargs.get("progressbar") is True:
+                    kwargs = dict(kwargs)
+                    kwargs["progressbar"] = _ModelDownloadProgress(status_cb, model_name)
+                return original_retrieve(*args, **kwargs)
+
+            pooch.retrieve = retrieve_with_ui_progress
+            try:
+                _rembg_session = new_session(model_name, sess_opts=opts)
+            finally:
+                pooch.retrieve = original_retrieve
+
             _rembg_model_name = model_name
 
             if status_cb:
-                status_cb(f"✅  Model AI '{model_name}' siap!")
+                status_cb(f"Model '{model_name}' siap")
 
             return _rembg_session
         except Exception as e:
             last_err = e
             if attempt < max_retries:
-                import time
                 time.sleep(1.5)
 
     err_msg = str(last_err)
     if any(k in err_msg for k in ("Connection", "RemoteDisconnected", "time out", "timed out", "Disconnected")):
         raise RuntimeError(
             f"Koneksi internet terputus saat mengunduh model '{model_name}'.\n\n"
-            f"Silakan pastikan koneksi internet stabil lalu klik 'Preview Ulang' untuk mencoba lagi."
+            f"Silakan pastikan koneksi internet stabil lalu klik 'Proses Ulang' untuk mencoba lagi."
         )
     raise RuntimeError(f"Gagal memuat model '{model_name}': {err_msg}")
 
 
-def _get_realesrgan_exe_path():
-    """Locate realesrgan-ncnn-vulkan.exe in frozen MEIPASS, local directory, or PATH."""
+def _get_realesrgan_paths():
     if getattr(sys, "frozen", False):
         base = Path(sys._MEIPASS)
     else:
-        base = Path(__file__).parent
+        base = Path(__file__).resolve().parent
 
-    candidates = [
-        base / "realesrgan" / "realesrgan-ncnn-vulkan.exe",
-        base / "realesrgan-ncnn-vulkan.exe",
+    engine_dir = base / "realesrgan"
+    exe_path = engine_dir / "realesrgan-ncnn-vulkan.exe"
+    models_dir = engine_dir / "models"
+
+    if not exe_path.is_file():
+        import shutil as _shutil
+        found = _shutil.which("realesrgan-ncnn-vulkan")
+        if found:
+            exe_path = Path(found)
+            engine_dir = exe_path.parent
+            candidate_models = engine_dir / "models"
+            if candidate_models.is_dir():
+                models_dir = candidate_models
+
+    if not exe_path.is_file():
+        raise RuntimeError(
+            "Engine Real-ESRGAN tidak ditemukan.\n\n"
+            f"Dicari di:\n{engine_dir / 'realesrgan-ncnn-vulkan.exe'}"
+        )
+
+    if not models_dir.is_dir():
+        raise RuntimeError(
+            "Folder model Real-ESRGAN tidak ditemukan.\n\n"
+            f"Dicari di:\n{models_dir}"
+        )
+
+    required = [
+        models_dir / f"{UPSCAYL_MODEL}.param",
+        models_dir / f"{UPSCAYL_MODEL}.bin",
     ]
-    for c in candidates:
-        if c.exists():
-            return c
-    import shutil
-    which_exe = shutil.which("realesrgan-ncnn-vulkan")
-    if which_exe:
-        return Path(which_exe)
-    return None
+    missing = [p.name for p in required if not p.is_file()]
+    if missing:
+        raise RuntimeError(
+            "Model Real-ESRGAN tidak lengkap:\n"
+            + "\n".join(missing)
+        )
+
+    return engine_dir, exe_path, models_dir
 
 
 def refine_alpha_mask(alpha_img, edge_smooth=0, erode_size=0):
@@ -577,85 +728,146 @@ def flood_remove_bg(img, threshold=220, fringe=30,
 
 
 # ═══════════════════════════════════════════════════════════
-#  Alpha-Safe Real-ESRGAN NCNN Vulkan Upscaler Engine (2x / 4x)
+#  Alpha-Safe Upscayl NCNN Vulkan Upscaler Engine (2x / 4x / 8x)
 # ═══════════════════════════════════════════════════════════
 
 def upscale_image_alpha_safe(img, scale=2, status_cb=None):
-    """
-    Upscale image using Real-ESRGAN NCNN Vulkan GPU Backend:
-    - RGB Channels: AI-upscaled via Real-ESRGAN NCNN Vulkan subprocess.
-    - Alpha Channel: Deterministic Lanczos upscale.
-    Preserves exact furniture silhouettes, thin legs, and handles without AI alpha hallucination.
-    """
-    original_size = img.size
-    new_w = original_size[0] * scale
-    new_h = original_size[1] * scale
+    """Upscale through Upscayl while preserving PNG alpha.
 
-    exe_path = _get_realesrgan_exe_path()
-    if exe_path is None:
-        raise RuntimeError(
-            "Biner 'realesrgan-ncnn-vulkan.exe' tidak ditemukan.\n"
-            "Pastikan folder 'realesrgan' terikut pada aplikasi."
-        )
+    8x uses the supported 4x AI pass, then a Lanczos 2x resize for the
+    final output size.
+    """
+    if scale not in (2, 4, 8):
+        raise ValueError("Scale hanya boleh 2x, 4x, atau 8x.")
+
+    original_size = img.size
+    new_size = (original_size[0] * scale, original_size[1] * scale)
+    ai_scale = UPSCAYL_AI_MAX_SCALE if scale == 8 else scale
+    ai_size = (original_size[0] * ai_scale, original_size[1] * ai_scale)
+
+    engine_dir, exe_path, models_dir = _get_realesrgan_paths()
 
     if status_cb:
-        status_cb(f"🔍 AI Upscale ({scale}x: {original_size[0]}×{original_size[1]} → {new_w}×{new_h} px) via Real-ESRGAN Vulkan...")
+        status_cb(0.0)
 
     import tempfile
     import subprocess
 
-    has_alpha = img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info)
+    has_alpha = (
+        img.mode in ("RGBA", "LA")
+        or (img.mode == "P" and "transparency" in img.info)
+    )
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir_path = Path(tmpdir)
-        in_tmp = tmpdir_path / "input_rgb.jpg"
-        out_tmp = tmpdir_path / "output_rgb.png"
+    with tempfile.TemporaryDirectory(prefix="whiteflood_upscale_") as tmpdir:
+        tmpdir = Path(tmpdir)
+        input_path = tmpdir / "input.png"
+        output_path = tmpdir / "output.png"
 
         if has_alpha:
-            img_rgba = img.convert("RGBA")
-            r, g, b, a = img_rgba.split()
-            rgb_img = Image.merge("RGB", (r, g, b))
-            rgb_img.save(in_tmp, format="JPEG", quality=95)
-
-            a_upscaled = a.resize((new_w, new_h), Image.LANCZOS)
+            save_img = img.convert("RGBA")
         else:
-            img_rgb = img.convert("RGB")
-            img_rgb.save(in_tmp, format="JPEG", quality=95)
-            a_upscaled = None
+            save_img = img.convert("RGB")
+
+        save_img.save(input_path, format="PNG", optimize=False)
 
         cmd = [
             str(exe_path),
-            "-i", str(in_tmp.resolve()),
-            "-o", str(out_tmp.resolve()),
-            "-s", str(scale),
-            "-n", "realesrgan-x4plus",
+            "-i", str(input_path.resolve()),
+            "-o", str(output_path.resolve()),
+            "-m", str(models_dir.resolve()),
+            "-n", UPSCAYL_MODEL,
+            "-s", str(ai_scale),
+            "-f", "png",
         ]
 
-        res = subprocess.run(cmd, capture_output=True, text=True)
-        if res.returncode != 0 or not out_tmp.exists():
-            err_msg = res.stderr.strip() if res.stderr else f"Exit code {res.returncode}"
-            raise RuntimeError(f"Gagal memproses Real-ESRGAN Vulkan: {err_msg}")
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-        with Image.open(out_tmp) as up_rgb:
-            up_rgb_loaded = up_rgb.copy()
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(engine_dir),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=creationflags,
+            )
 
-        if has_alpha and a_upscaled is not None:
-            r_up, g_up, b_up = up_rgb_loaded.convert("RGB").split()
-            result = Image.merge("RGBA", (r_up, g_up, b_up, a_upscaled))
-        else:
-            result = up_rgb_loaded.convert("RGB")
+            progress_pattern = re.compile(r'(\d+(?:\.\d+)?)%')
+            stderr_logs = []
+
+            for line in proc.stderr:
+                stderr_logs.append(line)
+                match = progress_pattern.search(line)
+                if match and status_cb:
+                    pct = float(match.group(1))
+                    status_cb(pct if scale != 8 else min(95.0, pct * 0.95))
+
+            proc.wait()
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                "Real-ESRGAN tidak merespons. Proses dihentikan."
+            )
+        except OSError as e:
+            raise RuntimeError(
+                "Real-ESRGAN gagal dijalankan.\n\n"
+                f"{e}"
+            )
+
+        if proc.returncode != 0 or not output_path.is_file():
+            details = "".join(stderr_logs).strip() or f"Exit code {proc.returncode}"
+            low = details.lower()
+
+            if "vulkan" in low or "gpu" in low or "device" in low:
+                raise RuntimeError(
+                    "Real-ESRGAN gagal mengakses GPU/Vulkan.\n\n"
+                    "Pastikan driver GPU mendukung Vulkan.\n\n"
+                    f"Detail:\n{details}"
+                )
+
+            raise RuntimeError(
+                "Real-ESRGAN gagal memproses gambar.\n\n"
+                f"Detail:\n{details}"
+            )
+
+        if output_path.stat().st_size <= 0:
+            raise RuntimeError("File output Real-ESRGAN kosong.")
+
+        with Image.open(output_path) as out_img:
+            raw_result = out_img.copy()
+
+        result = raw_result.convert("RGBA" if has_alpha else "RGB")
+        del raw_result
+
+        if result.size != ai_size:
+            raise RuntimeError(
+                f"Internal error: Ukuran Upscayl mismatch ({result.size} vs {ai_size})"
+            )
+
+        if scale == 8:
+            if status_cb:
+                status_cb(96.0)
+            resized = result.resize(new_size, Image.LANCZOS)
+            del result
+            result = resized
+            if status_cb:
+                status_cb(100.0)
+
+        if result.size != new_size:
+            raise RuntimeError(
+                f"Internal error: Ukuran output mismatch ({result.size} vs {new_size})"
+            )
 
     gc.collect()
-
-    if result.size != (new_w, new_h):
-        raise RuntimeError(f"Internal error: Ukuran upscale mismatch ({result.size} vs {new_w}x{new_h})")
-
     return result
 
 
 def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
                  model_name="birefnet-massive", alpha_matting=False, erode_size=0,
-                 tool=TOOL_REMOVE_BG, scale=2):
+                 tool=TOOL_REMOVE_BG, scale=2, status_cb=None):
     """Process a single file preserving rules for Remove BG or Upscale."""
     src, dst = Path(src), Path(dst)
     with Image.open(src) as img:
@@ -663,13 +875,17 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
         meta = metadata_for_save(img)
 
         if tool == TOOL_UPSCALE:
-            result = upscale_image_alpha_safe(img, scale=scale)
+            result = upscale_image_alpha_safe(img, scale=scale, status_cb=status_cb)
             expected_size = (original_size[0] * scale, original_size[1] * scale)
         else:
             if mode == MODE_WHITE:
                 result = flood_remove_bg(img, threshold, fringe, edge_smooth, aggressive)
             else:
-                result = ai_remove_bg(img, edge_smooth=edge_smooth, erode_size=erode_size, model_name=model_name, alpha_matting=alpha_matting)
+                result = ai_remove_bg(
+                    img, edge_smooth=edge_smooth, erode_size=erode_size,
+                    model_name=model_name, alpha_matting=alpha_matting,
+                    status_cb=status_cb,
+                )
             expected_size = original_size
 
         if result.size != expected_size:
@@ -682,8 +898,6 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
             result.save(dst, format="PNG", optimize=False)
 
         with Image.open(dst) as check:
-            if check.size != expected_size:
-                raise RuntimeError(f"Mismatch resolusi tersimpan: Ekspektasi {expected_size} -> {check.size}")
             if check.size != expected_size:
                 raise RuntimeError(f"Mismatch resolusi tersimpan: Ekspektasi {expected_size} -> {check.size}")
 
@@ -718,6 +932,10 @@ class WhiteFloodApp(ctk.CTk):
         self.status_text = ctk.StringVar(
             value="Siap. Pilih alat 'Hapus Background' atau 'Upscale'."
         )
+        self.preview_file_var = ctk.StringVar(value="Belum ada file")
+        self.preview_state_var = ctk.StringVar(value="SIAP  /  LOKAL")
+        self.progress_phase_var = ctk.StringVar(value="Belum ada proses")
+        self.progress_percent_var = ctk.StringVar(value="0%")
 
         self._src_path = None
         self._original = None
@@ -753,14 +971,14 @@ class WhiteFloodApp(ctk.CTk):
     # ───────────────────────────────────────
 
     def _build_ui(self):
-        self.columnconfigure(0, weight=0, minsize=290)
+        self.columnconfigure(0, weight=0, minsize=304)
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
 
         # ════════════════════════════════════════════════════
         #  LEFT SIDEBAR PANEL (~290px)
         # ════════════════════════════════════════════════════
-        sidebar_bg = ctk.CTkFrame(self, width=290, fg_color=C["card"], corner_radius=0)
+        sidebar_bg = ctk.CTkFrame(self, width=304, fg_color=C["card"], corner_radius=0)
         sidebar_bg.grid(row=0, column=0, sticky="nsew")
         sidebar_bg.pack_propagate(False)
 
@@ -769,15 +987,15 @@ class WhiteFloodApp(ctk.CTk):
             scrollbar_button_color=C["border"],
             scrollbar_button_hover_color=C["accent"],
         )
-        sidebar.pack(fill="both", expand=True, padx=12, pady=12)
+        sidebar.pack(fill="both", expand=True, padx=18, pady=18)
 
         # Header Title & Version
         tf = ctk.CTkFrame(sidebar, fg_color="transparent")
         tf.pack(fill="x", pady=(0, 6))
 
         ctk.CTkLabel(
-            tf, text="◆ WhiteFlood",
-            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+            tf, text="WHITEFLOOD",
+            font=ctk.CTkFont(family="Segoe UI", size=17, weight="bold"),
             text_color=C["accent"],
         ).pack(side="left")
         ctk.CTkLabel(
@@ -785,23 +1003,28 @@ class WhiteFloodApp(ctk.CTk):
             font=ctk.CTkFont(size=10), text_color=C["dim"],
         ).pack(side="left", padx=(6, 0), pady=(4, 0))
 
+        ctk.CTkLabel(
+            sidebar, text="Studio foto produk lokal",
+            font=ctk.CTkFont(size=10), text_color=C["dim"], anchor="w",
+        ).pack(fill="x", pady=(0, 12))
+
         # Tool Navigation Tabs (Remove BG vs Upscale)
-        self._section_label(sidebar, "PILIH ALAT")
+        self._section_label(sidebar, "ALAT AKTIF")
         nav_f = ctk.CTkFrame(sidebar, fg_color=C["card_alt"], corner_radius=6)
         nav_f.pack(fill="x", pady=(0, 10))
         nav_f.columnconfigure((0, 1), weight=1)
 
         self.btn_tool_rmbg = ctk.CTkButton(
-            nav_f, text="✂️ Hapus BG", command=lambda: self._switch_tool(TOOL_REMOVE_BG),
+            nav_f, text="Hapus Background", command=lambda: self._switch_tool(TOOL_REMOVE_BG),
             fg_color=C["accent"], hover_color=C["accent_hover"],
-            font=ctk.CTkFont(size=11, weight="bold"), height=32, corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=7,
         )
         self.btn_tool_rmbg.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
 
         self.btn_tool_upscale = ctk.CTkButton(
-            nav_f, text="🔍 Upscale", command=lambda: self._switch_tool(TOOL_UPSCALE),
+            nav_f, text="Upscale", command=lambda: self._switch_tool(TOOL_UPSCALE),
             fg_color="transparent", text_color=C["dim"], hover_color=C["border"],
-            font=ctk.CTkFont(size=11, weight="bold"), height=32, corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=7,
         )
         self.btn_tool_upscale.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
 
@@ -809,7 +1032,7 @@ class WhiteFloodApp(ctk.CTk):
         self.frame_rmbg_settings = ctk.CTkFrame(sidebar, fg_color="transparent")
         self.frame_rmbg_settings.pack(fill="x")
 
-        self._section_label(self.frame_rmbg_settings, "MODE PROSES AI")
+        self._section_label(self.frame_rmbg_settings, "MODE REMOVE BACKGROUND")
         modes = [MODE_FURNITURE, MODE_FAST, MODE_PERSON, MODE_HIGH_DETAIL, MODE_WHITE]
         self.mode_dropdown = ctk.CTkOptionMenu(
             self.frame_rmbg_settings, values=modes, variable=self.mode_var,
@@ -829,7 +1052,7 @@ class WhiteFloodApp(ctk.CTk):
         self.mode_desc.pack(anchor="w", pady=(0, 8))
         self._update_mode_desc()
 
-        self.lbl_refine = self._section_label(self.frame_rmbg_settings, "KETAJAMAN TEPI")
+        self.lbl_refine = self._section_label(self.frame_rmbg_settings, "KONTROL TEPI")
         self.refine_dropdown = ctk.CTkOptionMenu(
             self.frame_rmbg_settings, values=[REFINE_ORIGINAL, REFINE_SOFT, REFINE_ALPHA_MATTE],
             variable=self.refine_var,
@@ -878,13 +1101,13 @@ class WhiteFloodApp(ctk.CTk):
         # ── Tool 2: Upscale Settings Frame ──────────────────
         self.frame_upscale_settings = ctk.CTkFrame(sidebar, fg_color="transparent")
 
-        self._section_label(self.frame_upscale_settings, "SKALA PEMBESARAN")
+        self._section_label(self.frame_upscale_settings, "SKALA UPSCALE")
         scale_f = ctk.CTkFrame(self.frame_upscale_settings, fg_color=C["card_alt"], corner_radius=6)
         scale_f.pack(fill="x", pady=(0, 8))
-        scale_f.columnconfigure((0, 1), weight=1)
+        scale_f.columnconfigure((0, 1, 2), weight=1)
 
         self.btn_scale_2x = ctk.CTkButton(
-            scale_f, text="2x (Rekomendasi)", command=lambda: self._set_scale(2),
+            scale_f, text="2x", command=lambda: self._set_scale(2),
             fg_color=C["accent"], hover_color=C["accent_hover"],
             font=ctk.CTkFont(size=11, weight="bold"), height=32, corner_radius=6,
         )
@@ -897,19 +1120,32 @@ class WhiteFloodApp(ctk.CTk):
         )
         self.btn_scale_4x.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
 
+        self.btn_scale_8x = ctk.CTkButton(
+            scale_f, text="8x", command=lambda: self._set_scale(8),
+            fg_color="transparent", text_color=C["dim"], hover_color=C["border"],
+            font=ctk.CTkFont(size=11, weight="bold"), height=32, corner_radius=6,
+        )
+        self.btn_scale_8x.grid(row=0, column=2, sticky="ew", padx=2, pady=2)
+
         ctk.CTkLabel(
             self.frame_upscale_settings,
-            text="🔒 Transparansi Alpha-Safe: Siluet kaki meja tipis & ukiran dipertahankan presisi 100%.",
+            text="PNG/RGBA tetap aman. 2x paling ringan. 8x memakai 4x AI lalu resize Lanczos 2x.",
             font=ctk.CTkFont(size=10), text_color=C["dim"], wraplength=260, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
         # Single Image Actions
-        self._lbl_single_section = self._section_label(sidebar, "GAMBAR TUNGGAL")
+        self._lbl_single_section = self._section_label(sidebar, "FILE & HASIL")
+
+        self.file_state_label = ctk.CTkLabel(
+            sidebar, text="Belum ada file dipilih",
+            font=ctk.CTkFont(size=10), text_color=C["dim"], anchor="w",
+        )
+        self.file_state_label.pack(fill="x", pady=(0, 6))
         
         self.btn_pick = ctk.CTkButton(
             sidebar, text="Pilih Gambar", command=self.load_and_process,
             fg_color=C["accent"], hover_color=C["accent_hover"],
-            font=ctk.CTkFont(size=12, weight="bold"), height=36, corner_radius=6,
+            font=ctk.CTkFont(size=12, weight="bold"), height=40, corner_radius=8,
         )
         self.btn_pick.pack(fill="x", pady=(0, 6))
 
@@ -918,23 +1154,23 @@ class WhiteFloodApp(ctk.CTk):
         act_sub.columnconfigure((0, 1), weight=1)
 
         self.btn_repreview = ctk.CTkButton(
-            act_sub, text="Preview Ulang", command=self.repreview,
+            act_sub, text="Proses Ulang", command=self.repreview,
             fg_color=C["blue"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=11, weight="bold"), height=32, corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=7,
             state="disabled",
         )
         self.btn_repreview.grid(row=0, column=0, sticky="ew", padx=(0, 3))
 
         self.btn_save = ctk.CTkButton(
-            act_sub, text="Simpan PNG", command=self.save_result,
+            act_sub, text="Simpan Hasil", command=self.save_result,
             fg_color=C["border"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=11, weight="bold"), height=32, corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=7,
             state="disabled",
         )
         self.btn_save.grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
         # Batch Section
-        self._section_label(sidebar, "PROSES BATCH (FOLDER)")
+        self._section_label(sidebar, "BATCH FOLDER")
 
         ctk.CTkLabel(sidebar, text="Nama Batch", text_color=C["dim"], font=ctk.CTkFont(size=11)).pack(anchor="w")
         self.entry_batch_name = ctk.CTkEntry(
@@ -973,16 +1209,16 @@ class WhiteFloodApp(ctk.CTk):
         b_sub.columnconfigure(1, weight=1)
 
         self.btn_batch = ctk.CTkButton(
-            b_sub, text="Start Batch", command=self.process_folder,
+            b_sub, text="Mulai Batch", command=self.process_folder,
             fg_color=C["blue"], hover_color=C["blue_hover"],
-            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"), height=36, corner_radius=7,
         )
         self.btn_batch.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
         self.btn_cancel_batch = ctk.CTkButton(
             b_sub, text="Batal", command=self.cancel_batch,
             fg_color=C["border"], hover_color=C["red_hover"],
-            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"), height=36, corner_radius=7,
             state="disabled",
         )
         self.btn_cancel_batch.grid(row=0, column=1, sticky="ew")
@@ -999,14 +1235,35 @@ class WhiteFloodApp(ctk.CTk):
         #  RIGHT PREVIEW AREA (MAXIMIZED 75-80% SPACE)
         # ════════════════════════════════════════════════════
         preview_area = ctk.CTkFrame(self, fg_color=C["bg"], corner_radius=0)
-        preview_area.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-        preview_area.rowconfigure(0, weight=1)
+        preview_area.grid(row=0, column=1, sticky="nsew", padx=(14, 18), pady=14)
+        preview_area.rowconfigure(1, weight=1)
         preview_area.columnconfigure(0, weight=1)
 
-        self.preview_canvas = SplitSliderPreview(preview_area)
-        self.preview_canvas.grid(row=0, column=0, sticky="nsew")
+        preview_header = ctk.CTkFrame(preview_area, fg_color="transparent", height=34)
+        preview_header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        preview_header.columnconfigure(0, weight=1)
 
-        self.spinner_frame = ctk.CTkFrame(preview_area, fg_color=C["card_alt"], corner_radius=10)
+        ctk.CTkLabel(
+            preview_header, textvariable=self.preview_file_var,
+            font=ctk.CTkFont(size=13, weight="bold"), text_color=C["text"], anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            preview_header, textvariable=self.preview_state_var,
+            font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"], anchor="e",
+        ).grid(row=0, column=1, sticky="e")
+
+        preview_shell = ctk.CTkFrame(
+            preview_area, fg_color=C["card"], corner_radius=11,
+            border_width=1, border_color=C["border"],
+        )
+        preview_shell.grid(row=1, column=0, sticky="nsew")
+        preview_shell.rowconfigure(0, weight=1)
+        preview_shell.columnconfigure(0, weight=1)
+
+        self.preview_canvas = SplitSliderPreview(preview_shell)
+        self.preview_canvas.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+
+        self.spinner_frame = ctk.CTkFrame(preview_shell, fg_color=C["card_alt"], corner_radius=10)
         self.spinner = LoadingSpinner(self.spinner_frame, size=46, color=C["accent"], bg_color=C["card_alt"])
         self.spinner.pack(pady=(20, 8), padx=40)
         self.spinner_label = ctk.CTkLabel(
@@ -1015,71 +1272,56 @@ class WhiteFloodApp(ctk.CTk):
         )
         self.spinner_label.pack(pady=(0, 20), padx=40)
 
-        # Compact Bottom Status Bar
-        status_bar = ctk.CTkFrame(preview_area, fg_color="transparent")
-        status_bar.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        # Bottom status area keeps phase and percentage visible without a terminal.
+        status_bar = ctk.CTkFrame(preview_area, fg_color=C["card"], corner_radius=8)
+        status_bar.grid(row=2, column=0, sticky="ew", pady=(10, 0), padx=1)
+        status_bar.columnconfigure(0, weight=1)
+
+        progress_meta = ctk.CTkFrame(status_bar, fg_color="transparent")
+        progress_meta.grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 0))
+        progress_meta.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            progress_meta, textvariable=self.progress_phase_var,
+            font=ctk.CTkFont(size=10, weight="bold"), text_color=C["text"], anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            progress_meta, textvariable=self.progress_percent_var,
+            font=ctk.CTkFont(size=10, weight="bold"), text_color=C["accent"], anchor="e",
+        ).grid(row=0, column=1, sticky="e")
 
         self.progress = ctk.CTkProgressBar(
             status_bar, fg_color=C["border"], progress_color=C["accent"],
             height=4, corner_radius=2,
         )
-        self.progress.pack(fill="x", pady=(0, 4))
+        self.progress.grid(row=1, column=0, sticky="ew", padx=12, pady=(5, 4))
         self.progress.set(0)
 
         ctk.CTkLabel(
             status_bar, textvariable=self.status_text,
-            font=ctk.CTkFont(size=11), text_color=C["dim"], anchor="w",
-        ).pack(fill="x")
+            font=ctk.CTkFont(size=10), text_color=C["dim"], anchor="w",
+        ).grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 9))
 
     # ───────────────────────────────────────
     #  Tool Switch & UI State Management
     # ───────────────────────────────────────
 
-    def _switch_tool(self, tool):
-        if self._processing:
-            messagebox.showwarning(APP_NAME, "Harap tunggu hingga proses saat ini selesai.")
-            return
-
-        if self.active_tool == tool:
-            return
-
-        # Release previous heavy engine from RAM
-        if self.active_tool == TOOL_REMOVE_BG:
-            global _rembg_session, _rembg_model_name
-            if _rembg_session is not None:
-                old_session = _rembg_session
-                _rembg_session = None
-                _rembg_model_name = None
-                try:
-                    del old_session
-                    gc.collect()
-                except Exception:
-                    pass
-
-        self.active_tool = tool
-
-        if tool == TOOL_REMOVE_BG:
-            self.btn_tool_rmbg.configure(fg_color=C["accent"], text_color=C["text"])
-            self.btn_tool_upscale.configure(fg_color="transparent", text_color=C["dim"])
-            self.frame_upscale_settings.pack_forget()
-            self.frame_rmbg_settings.pack(fill="x", before=self._lbl_single_section)
-            self.status_text.set(f"Alat aktif: Hapus Background. [RAM: {get_process_memory_mb()} MB]")
-        else:
-            self.btn_tool_upscale.configure(fg_color=C["accent"], text_color=C["text"])
-            self.btn_tool_rmbg.configure(fg_color="transparent", text_color=C["dim"])
-            self.frame_rmbg_settings.pack_forget()
-            self.frame_upscale_settings.pack(fill="x", before=self._lbl_single_section)
-            self.btn_repreview.configure(text="Proses Upscale")
-            self.status_text.set(f"Alat aktif: Upscale ({self.scale_var.get()}x). [RAM: {get_process_memory_mb()} MB]")
-
     def _set_scale(self, scale):
+        if scale not in (2, 4, 8):
+            raise ValueError("Scale hanya boleh 2x, 4x, atau 8x.")
         self.scale_var.set(scale)
-        if scale == 2:
-            self.btn_scale_2x.configure(fg_color=C["accent"], text_color=C["text"])
-            self.btn_scale_4x.configure(fg_color="transparent", text_color=C["dim"])
-        else:
-            self.btn_scale_4x.configure(fg_color=C["accent"], text_color=C["text"])
-            self.btn_scale_2x.configure(fg_color="transparent", text_color=C["dim"])
+        for selected_scale, button in (
+            (2, self.btn_scale_2x),
+            (4, self.btn_scale_4x),
+            (8, self.btn_scale_8x),
+        ):
+            is_active = selected_scale == scale
+            button.configure(
+                fg_color=C["accent"] if is_active else "transparent",
+                text_color=C["text"] if is_active else C["dim"],
+            )
+        if self.active_tool == TOOL_UPSCALE:
+            self.preview_state_var.set(f"SIAP  /  UPSCALE {scale}X")
 
     def _section_label(self, parent, text):
         lbl = ctk.CTkLabel(
@@ -1133,6 +1375,47 @@ class WhiteFloodApp(ctk.CTk):
             return 0, True, 0
         else:
             return 0, False, 0  # Original mode: edge_smooth=0, alpha_matting=False, erode_size=0
+
+    def _apply_status_event(self, event, tool, scale):
+        """Render worker/download progress on the Tk main thread."""
+        if isinstance(event, dict) and event.get("kind") == "model_download":
+            model_name = event.get("model", "AI")
+            percent = int(event.get("percent", 0))
+            phase = f"Mengunduh model {model_name}"
+            self.progress_phase_var.set(phase)
+            self.progress_percent_var.set(f"{percent}%")
+            self.progress.configure(progress_color=C["accent"])
+            self.progress.set(max(0.01, min(1.0, percent / 100.0)))
+            self.spinner_label.configure(text=f"Mengunduh model... {percent}%")
+            self.status_text.set(
+                f"{phase}: {percent}% [RAM: {get_process_memory_mb()} MB]"
+            )
+            return
+
+        if isinstance(event, (int, float)):
+            percent = max(0, min(100, int(event)))
+            if tool == TOOL_UPSCALE:
+                phase = f"Upscale {scale}x"
+                spinner_text = f"Memperbesar foto ({scale}x)... {percent}%"
+            else:
+                phase = "Remove Background"
+                spinner_text = f"Menghapus background... {percent}%"
+            self.progress_phase_var.set(phase)
+            self.progress_percent_var.set(f"{percent}%")
+            self.progress.set(max(0.01, percent / 100.0))
+            self.spinner_label.configure(text=spinner_text)
+            self.status_text.set(
+                f"{phase}: {percent}% [RAM: {get_process_memory_mb()} MB]"
+            )
+            return
+
+        message = str(event)
+        self.progress_phase_var.set(message)
+        self.spinner_label.configure(text=message)
+        if "siap" in message.lower():
+            self.progress.set(0.4)
+            self.progress_percent_var.set("Menyiapkan")
+        self.status_text.set(f"{message} [RAM: {get_process_memory_mb()} MB]")
 
     def _update_button_states(self):
         """Reconstruct UI button states based on actual app state."""
@@ -1194,7 +1477,8 @@ class WhiteFloodApp(ctk.CTk):
             self.btn_tool_upscale.configure(fg_color="transparent", text_color=C["dim"])
             self.frame_upscale_settings.pack_forget()
             self.frame_rmbg_settings.pack(fill="x", before=self._lbl_single_section)
-            self.btn_repreview.configure(text="Preview Ulang")
+            self.btn_repreview.configure(text="Proses Ulang")
+            self.preview_state_var.set("SIAP  /  REMOVE BACKGROUND")
             self.status_text.set(f"Alat aktif: Hapus Background. [RAM: {get_process_memory_mb()} MB]")
         else:
             self.btn_tool_upscale.configure(fg_color=C["accent"], text_color=C["text"])
@@ -1202,6 +1486,7 @@ class WhiteFloodApp(ctk.CTk):
             self.frame_rmbg_settings.pack_forget()
             self.frame_upscale_settings.pack(fill="x", before=self._lbl_single_section)
             self.btn_repreview.configure(text="Proses Upscale")
+            self.preview_state_var.set(f"SIAP  /  UPSCALE {self.scale_var.get()}X")
             self.status_text.set(f"Alat aktif: Upscale ({self.scale_var.get()}x). [RAM: {get_process_memory_mb()} MB]")
 
         # Retain original image in preview if available
@@ -1224,6 +1509,9 @@ class WhiteFloodApp(ctk.CTk):
         self._src_path = src
         self._original = None
         self._result = None
+        self.preview_file_var.set(Path(src).name)
+        self.file_state_label.configure(text=f"File aktif: {Path(src).name}")
+        self.preview_state_var.set("MEMUAT  /  LOKAL")
 
         try:
             with Image.open(self._src_path) as img:
@@ -1237,13 +1525,15 @@ class WhiteFloodApp(ctk.CTk):
 
             orig_sz = self._original.size
             if self.active_tool == TOOL_UPSCALE:
+                self.preview_state_var.set(f"SIAP  /  UPSCALE {self.scale_var.get()}X")
                 self.status_text.set(
-                    f"Gambar dimuat: {orig_sz[0]}×{orig_sz[1]} px. "
+                    f"Gambar dimuat: {orig_sz[0]}x{orig_sz[1]} px. "
                     f"Pilih skala lalu klik 'Proses Upscale'. [RAM: {get_process_memory_mb()} MB]"
                 )
             else:
+                self.preview_state_var.set("MEMPROSES  /  REMOVE BACKGROUND")
                 self.status_text.set(
-                    f"Gambar dimuat: {orig_sz[0]}×{orig_sz[1]} px. Menghapus background... [RAM: {get_process_memory_mb()} MB]"
+                    f"Gambar dimuat: {orig_sz[0]}x{orig_sz[1]} px. Menghapus background... [RAM: {get_process_memory_mb()} MB]"
                 )
         except Exception as e:
             self.status_text.set(f"Gagal memuat gambar: {e}")
@@ -1287,6 +1577,10 @@ class WhiteFloodApp(ctk.CTk):
                 f"(Ukuran file ±150–250 MB, mengunduh via internet).",
             )
             if not ans:
+                self.preview_state_var.set(
+                    "SIAP  /  UPSCALE" if tool == TOOL_UPSCALE
+                    else "SIAP  /  REMOVE BACKGROUND"
+                )
                 self.status_text.set("Pengunduhan model dibatalkan pengguna.")
                 self._processing = False
                 self._update_button_states()
@@ -1294,28 +1588,28 @@ class WhiteFloodApp(ctk.CTk):
                 return
 
         self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.spinner_frame.lift()
         self.spinner.start()
 
         if tool == TOOL_UPSCALE:
             self.spinner_label.configure(text=f"Memperbesar foto ({scale}x)...")
             self.status_text.set(f"Memperbesar foto ({scale}x)... [RAM: {get_process_memory_mb()} MB]")
+            self.progress_phase_var.set(f"Upscale {scale}x")
         else:
             self.spinner_label.configure(text="Menghapus background...")
             self.status_text.set(f"Menghapus background ({mode})... [RAM: {get_process_memory_mb()} MB]")
+            self.progress_phase_var.set("Remove Background")
 
         self.progress.set(0.15)
+        self.progress_percent_var.set("Menyiapkan")
 
         th = self.threshold_var.get()
         fr = self.fringe_var.get()
         ag = self.aggressive_var.get()
         es, am, er = self._get_refinement_params()
 
-        def _status_cb(msg):
-            self.after(0, lambda m=msg: self.status_text.set(f"{m} [RAM: {get_process_memory_mb()} MB]"))
-            self.after(0, lambda: self.progress.configure(
-                progress_color=C["purple"] if "⬇" in msg else C["accent"]
-            ))
-            self.after(0, lambda: self.progress.set(0.3))
+        def _status_cb(val):
+            self.after(0, lambda event=val: self._apply_status_event(event, tool, scale))
 
         def _worker():
             try:
@@ -1350,6 +1644,12 @@ class WhiteFloodApp(ctk.CTk):
         self._processing = False
         self.progress.set(1.0)
         self.progress.configure(progress_color=C["accent"])
+        self.progress_phase_var.set("Selesai")
+        self.progress_percent_var.set("100%")
+        self.preview_state_var.set(
+            "SELESAI  /  UPSCALE" if self.active_tool == TOOL_UPSCALE
+            else "SELESAI  /  REMOVE BACKGROUND"
+        )
 
         self.preview_canvas.set_images(self._original, self._result)
         self._update_button_states()
@@ -1360,13 +1660,13 @@ class WhiteFloodApp(ctk.CTk):
 
         if self.active_tool == TOOL_UPSCALE:
             self.status_text.set(
-                f"[Upscale {self.scale_var.get()}x] Selesai: {orig_sz[0]}×{orig_sz[1]} → {res_sz[0]}×{res_sz[1]} px. "
-                f"[RAM: {ram_mb} MB] → Klik 'Simpan PNG'."
+                f"[Upscale {self.scale_var.get()}x] Selesai: {orig_sz[0]}x{orig_sz[1]} -> {res_sz[0]}x{res_sz[1]} px. "
+                f"[RAM: {ram_mb} MB] -> Klik 'Simpan Hasil'."
             )
         else:
             self.status_text.set(
-                f"[{self.mode_var.get()}] Selesai: {res_sz[0]}×{res_sz[1]} px. "
-                f"[RAM: {ram_mb} MB] → Klik 'Simpan PNG'."
+                f"[{self.mode_var.get()}] Selesai: {res_sz[0]}x{res_sz[1]} px. "
+                f"[RAM: {ram_mb} MB] -> Klik 'Simpan Hasil'."
             )
 
     def _on_process_err(self, err):
@@ -1376,6 +1676,9 @@ class WhiteFloodApp(ctk.CTk):
         self._processing = False
         self.progress.set(0)
         self.progress.configure(progress_color=C["accent"])
+        self.progress_phase_var.set("Gagal")
+        self.progress_percent_var.set("0%")
+        self.preview_state_var.set("ERROR  /  PERLU DICEK")
 
         # Preserve original image preview on error
         if self._original is not None:
@@ -1410,10 +1713,10 @@ class WhiteFloodApp(ctk.CTk):
                 if sz != res_sz:
                     raise RuntimeError(f"Resolusi tersimpan tidak cocok: {res_sz} -> {sz}")
 
-            self.status_text.set(f"Disimpan: {sz[0]}×{sz[1]} px → {Path(dst).name} [RAM: {get_process_memory_mb()} MB]")
+            self.status_text.set(f"Disimpan: {sz[0]}x{sz[1]} px -> {Path(dst).name} [RAM: {get_process_memory_mb()} MB]")
             messagebox.showinfo(
                 APP_NAME,
-                f"Tersimpan!\n\nResolusi Output: {sz[0]}×{sz[1]} px\n"
+                f"Tersimpan!\n\nResolusi Output: {sz[0]}x{sz[1]} px\n"
                 f"Lokasi File: {dst}\n\nBuilt by Bima Chakti.",
             )
         except Exception as e:
@@ -1484,6 +1787,12 @@ class WhiteFloodApp(ctk.CTk):
         self._update_button_states()
         self.btn_cancel_batch.configure(state="normal", fg_color=C["red"])
 
+        def _batch_status(event):
+            self.after(
+                0,
+                lambda value=event: self._apply_status_event(value, tool, scale),
+            )
+
         def _batch():
             ok, errors = 0, []
             current_seq = 1
@@ -1499,7 +1808,7 @@ class WhiteFloodApp(ctk.CTk):
                     process_file(
                         src, dst_path, mode, th, fr, es, ag,
                         model_name=internal_model, alpha_matting=am, erode_size=er,
-                        tool=tool, scale=scale,
+                        tool=tool, scale=scale, status_cb=_batch_status,
                     )
                     ok += 1
                 except Exception as e:
@@ -1511,22 +1820,27 @@ class WhiteFloodApp(ctk.CTk):
 
     def _batch_tick(self, idx, total, src_name, dst_name):
         self.status_text.set(
-            f"Memproses {idx}/{total}: {src_name} → {dst_name} [RAM: {get_process_memory_mb()} MB]"
+            f"Memproses {idx}/{total}: {src_name} -> {dst_name} [RAM: {get_process_memory_mb()} MB]"
         )
         self.progress.set(idx / total)
+        self.progress_phase_var.set(f"Batch {idx}/{total}")
+        self.progress_percent_var.set(f"{int((idx / total) * 100)}%")
 
     def _batch_done(self, ok, total, errors, cancelled=False):
         self.progress.set(0)
+        self.progress_percent_var.set("0%")
         self._processing = False
         self._update_button_states()
         self.btn_cancel_batch.configure(state="disabled", fg_color=C["border"])
 
         ram_mb = get_process_memory_mb()
         if cancelled:
+            self.progress_phase_var.set("Batch dibatalkan")
             msg = f"Batch dibatalkan. {ok} dari {total} gambar selesai diproses. [RAM: {ram_mb} MB]"
             self.status_text.set(msg)
             messagebox.showinfo(APP_NAME, msg)
         elif errors:
+            self.progress_phase_var.set("Batch selesai dengan error")
             self.status_text.set(f"Selesai {ok}/{total}. Ada {len(errors)} error. [RAM: {ram_mb} MB]")
             messagebox.showwarning(
                 APP_NAME,
@@ -1534,6 +1848,7 @@ class WhiteFloodApp(ctk.CTk):
                 + "\n".join(errors[:10]),
             )
         else:
+            self.progress_phase_var.set("Batch selesai")
             self.status_text.set(f"Selesai: {ok} file diproses. [RAM: {ram_mb} MB]")
             messagebox.showinfo(
                 APP_NAME,

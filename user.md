@@ -18,7 +18,7 @@
 Aplikasi ditujukan untuk foto produk furnitur (kursi, meja, lemari, dll.) untuk keperluan katalog dan kantor.
 WhiteFlood v2.5.0 menyediakan 2 Alat Terpisah:
 1. **✂️ Remove Background**
-2. **🔍 Upscale (Pembesar Resolusi 2x / 4x)**
+2. **🔍 Upscale (Pembesar Resolusi 2x / 4x / 8x)**
 
 Kedua alat ini **tidak boleh berjalan bersamaan secara otomatis**. Pengguna memilih salah satu alat yang dibutuhkan melalui tombol navigasi di sidebar.
 
