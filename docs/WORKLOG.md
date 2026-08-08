@@ -97,3 +97,35 @@ Status: Selesai untuk patch source dan dokumentasi; verifikasi GUI, download nya
 - `review-temp/WhiteFlood_BG_Remover_App/RUN_APP.bat`
 - `review-temp/WhiteFlood_BG_Remover_App/RUN_APP.vbs`
 - `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+
+---
+
+## 2026-08-08 - Build EXE windowed dari source terbaru
+
+Status: Build selesai; runtime EXE belum diverifikasi.
+
+### Hasil
+
+- Menjalankan `BUILD_EXE.bat` setelah persetujuan Bima.
+- Dependency project dan PyInstaller terdeteksi sudah tersedia.
+- PyInstaller selesai dengan mode `--onefile --windowed`.
+- EXE baru dibuat di `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`.
+
+### Bukti verifikasi aktual
+
+- Exit code build: `0`.
+- Ukuran file: `200,505,614` bytes (`191.22 MB`).
+- Waktu dibuat: `2026-08-08 13:34:08`.
+- SHA256: `2A36E97CCE8B3AF55A9289AD20533116C5F79BFD8D793A7A660CE658712D0B02`.
+- Log build memberi warning tentang modul opsional `onnx`, `filetype`, dan `tbb12.dll`; belum ada bukti warning tersebut menghalangi jalur aplikasi.
+
+### Belum diverifikasi
+
+- Menjalankan EXE dan membuka GUI.
+- Drag slider, remove background, upscale, dan download model dari EXE.
+- Menjalankan EXE pada PC kantor.
+
+### File/artefak
+
+- `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`
+- `review-temp/WhiteFlood_BG_Remover_App/build/`

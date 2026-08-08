@@ -68,11 +68,11 @@ Tanggal: 2026-08-08
 - Pemeriksaan syntax source aktif dengan `python -m py_compile ...` sesuai aturan repo.
 - Static smoke test untuk kontrak ukuran output 2x/4x/8x, alpha, progress adapter, dan launcher tanpa mengunduh model atau menjalankan GUI.
 - Pemeriksaan bahwa `CREATE_NO_WINDOW` tetap ada dan dependency tidak lagi di-install setiap launch.
-- Tidak menjalankan GUI, download model, install dependency, atau build EXE tanpa persetujuan tambahan karena tindakan tersebut memakai environment/artefak user.
+- GUI dan download model nyata tidak dijalankan. Setelah persetujuan Bima, `BUILD_EXE.bat` dijalankan dan menghasilkan EXE windowed baru; install dependency yang dilaporkan script seluruhnya sudah tersedia.
 - Dokumentasi hanya akan mencatat bukti yang benar-benar dijalankan.
 
 ## Risiko dan batas
 
 - Tanpa GUI smoke test, kelancaran slider dan fidelity visual belum boleh disebut terverifikasi penuh.
 - Tanpa download model nyata, angka progress hanya bisa diuji melalui fake downloader/static smoke test; koneksi GitHub dan ukuran file aktual belum dinilai.
-- Tanpa build EXE, kesiapan distribusi binary belum boleh disebut terverifikasi.
+- EXE baru sudah terbentuk, tetapi kesiapan distribusi binary belum boleh disebut terverifikasi penuh sebelum smoke test menjalankan EXE.

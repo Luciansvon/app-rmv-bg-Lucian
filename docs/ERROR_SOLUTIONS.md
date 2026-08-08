@@ -156,7 +156,7 @@ Static smoke test memeriksa adapter progress, `pooch.retrieve` hook, `sess_opts`
 
 ### Bukti verifikasi aktual
 
-Pemeriksaan syntax dan static smoke test dijalankan. Download model nyata, GUI, dan EXE belum dijalankan.
+Pemeriksaan syntax dan static smoke test dijalankan. `BUILD_EXE.bat` juga berhasil membuat EXE windowed 200,505,614 bytes pada 2026-08-08 13:34:08. Download model nyata, GUI, dan smoke test EXE belum dijalankan.
 
 ### Batasan
 

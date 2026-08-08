@@ -13,7 +13,7 @@ Status verifikasi sebelum patch UI:
 - Upscale memanggil backend `realesrgan-ncnn-vulkan.exe` melalui subprocess;
 - pemeriksaan runtime GUI, pemrosesan gambar nyata, dan build EXE tidak dijalankan saat dokumen baseline dibuat.
 
-Perubahan patch 2026-08-08 sudah diperiksa melalui syntax check dan static smoke test. GUI, download model nyata, dan build EXE tetap belum dijalankan.
+Perubahan patch 2026-08-08 sudah diperiksa melalui syntax check dan static smoke test. Build EXE windowed juga sudah dijalankan setelah persetujuan Bima; GUI dan download model nyata tetap belum dijalankan.
 
 Jangan mengubah status menjadi "terverifikasi" hanya karena fungsi atau komentar sudah ada di source.
 
@@ -126,6 +126,13 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 - `RUN_APP.vbs` memilih EXE di `dist` bila tersedia; jika belum ada, launcher memakai `pythonw.exe` untuk source agar console tidak muncul.
 - Aset logo, folder `realesrgan`, metadata package, dan dependency runtime dikumpulkan ke bundle.
 - Script build bersifat destruktif terhadap `build/`, `dist/`, dan file `.spec`; target harus diperiksa sebelum dijalankan.
+
+Build terakhir yang dicek:
+
+- Command: `BUILD_EXE.bat`.
+- Output: `dist/WhiteFlood_BG_Remover.exe`, 200,505,614 bytes, dibuat 2026-08-08 13:34:08.
+- Mode: PyInstaller `--onefile --windowed`.
+- Hasil runtime EXE belum diuji; log build memuat warning dependency opsional yang perlu dipantau saat smoke test.
 
 ## Aturan arsitektur yang dikunci
 
