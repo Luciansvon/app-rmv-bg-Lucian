@@ -97,6 +97,8 @@ review-temp/WhiteFlood_BG_Remover_App/
 - Tombol proses, simpan, dan batch dikunci melalui state `_processing` agar proses ganda tidak berjalan bersamaan.
 - Adapter `_ModelDownloadProgress` meneruskan byte download `pooch` ke progress bar dan circular progress UI sehingga persentase serta ukuran model terlihat di aplikasi.
 - Downloader `features/model_download.py` menyimpan LaMa di folder user yang writable; dialog konfirmasi muncul sebelum download pertama.
+- `_UiEventQueue` menerima callback dari worker tanpa memanggil Tkinter langsung; main thread menguras queue berkala sehingga download tetap berjalan saat window diminimize.
+- Worker single-image, watermark, vectorize, dan batch dilacak oleh `WhiteFloodApp`; close tetap mengirim cancel lalu menunggu worker berhenti sebelum window dihancurkan.
 - `LoadingSpinner` menjadi circular progress determinate untuk workflow yang memiliki progress dan tetap indeterminate saat engine tidak menyediakan angka kontinu.
 - Timer proses terpusat memakai `time.perf_counter()` dan callback `after()` Tkinter; label `Durasi HH:MM:SS` berhenti pada sukses, error, atau cancel untuk single image, vector, watermark, upscale, dan batch.
 - `features/performance.py` menjadi source of truth untuk selector speed; mode hanya tampil pada tool yang memiliki parameter speed nyata dan `White Background` tidak menampilkan kontrol pajangan.
@@ -109,8 +111,9 @@ review-temp/WhiteFlood_BG_Remover_App/
 3. Gambar asli langsung ditampilkan sebelum proses berat dimulai; memilih file tidak memproses otomatis.
 4. User menekan aksi proses yang sesuai dengan alat aktif.
 5. Worker thread mengerjakan proses berat agar UI tetap merespons.
-6. Callback `after` Tkinter mengembalikan status proses dan progress download/model/frame ke UI.
-7. Hasil dikembalikan ke UI; user memilih Export/Simpan, lalu output divalidasi.
+6. Worker memasukkan status proses dan progress download/model/frame ke `_UiEventQueue`.
+7. Callback `after` Tkinter pada main thread menguras queue dan mengembalikan event ke UI.
+8. Hasil dikembalikan ke UI; user memilih Export/Simpan, lalu output divalidasi.
 
 ### Remove Background pipeline
 

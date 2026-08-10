@@ -361,3 +361,54 @@ Ukuran dan alpha bounding box asset diperiksa secara read-only. Syntax check lul
 ### File terdampak
 
 - `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+
+## ERR-008 - Download model tersendat saat window diminimize
+
+Tanggal: 2026-08-10
+Versi: 2.6.0
+Area: UI | Remove Background | Remove Watermark
+Status: Diperbaiki
+
+### Gejala
+
+Saat model AI sedang diunduh lalu window WhiteFlood diminimize, progress dapat terlihat berhenti dan download tidak memberi hasil yang meyakinkan.
+
+### Cara reproduksi
+
+1. Jalankan workflow yang belum memiliki model AI.
+2. Setujui dialog download model.
+3. Minimize window ketika progress download berjalan.
+
+### Hasil yang diharapkan
+
+Download tetap berjalan di background selama proses WhiteFlood masih hidup. Progress kembali diproses oleh UI saat event loop berjalan, dan window close tetap membatalkan proses dengan aman.
+
+### Root cause
+
+Callback progress dari worker sebelumnya memanggil `self.after(...)` Tkinter secara langsung dari thread worker. Jalur download model ikut bergantung pada komunikasi lintas thread yang tidak memiliki antrean event khusus. Source juga tidak melacak worker secara terpusat saat proses ditutup.
+
+### Solusi
+
+- Menambahkan `_UiEventQueue` yang thread-safe.
+- Mengubah callback worker untuk memasukkan progress/hasil ke queue, bukan memanggil Tkinter langsung.
+- Main thread menguras queue setiap 50 ms, termasuk saat window diminimize.
+- Menambahkan tracking worker dan mempertahankan cancel-on-close serta cleanup model parsial yang sudah ada.
+
+### Perlindungan regresi
+
+Unittest memverifikasi event yang diposting dari thread worker baru diterapkan saat main thread menguras queue. Downloader fake tetap memverifikasi progress byte, atomic install, dan cleanup `.part`.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile .\review-temp\WhiteFlood_BG_Remover_App\whiteflood_app.py` dijalankan.
+- `python -m unittest discover -s tests -v` dijalankan.
+- GUI minimize dan download internet nyata belum dijalankan pada sesi ini.
+
+### Batasan
+
+Belum ada bukti runtime bahwa file model nyata selesai saat window diminimize; pemeriksaan itu membutuhkan GUI, koneksi internet, dan model yang belum tersedia.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `tests/test_features.py`

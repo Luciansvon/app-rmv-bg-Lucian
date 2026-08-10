@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -37,7 +38,7 @@ from features.watermark.media import (  # noqa: E402
     probe_video,
 )
 from features.watermark.video import VideoProcessor, VideoError  # noqa: E402
-from whiteflood_app import format_duration  # noqa: E402
+from whiteflood_app import _UiEventQueue, format_duration  # noqa: E402
 
 
 class FeatureContractTests(unittest.TestCase):
@@ -78,6 +79,20 @@ class FeatureContractTests(unittest.TestCase):
         self.assertEqual(format_duration(0), "00:00:00")
         self.assertEqual(format_duration(65), "00:01:05")
         self.assertEqual(format_duration(3661), "01:01:01")
+
+    def test_worker_ui_events_are_drained_on_main_thread(self):
+        bridge = _UiEventQueue()
+        events = []
+        worker = threading.Thread(
+            target=lambda: bridge.post(lambda: events.append("download"))
+        )
+        worker.start()
+        worker.join()
+
+        self.assertEqual(events, [])
+        for callback in bridge.drain():
+            callback()
+        self.assertEqual(events, ["download"])
 
     def test_bundled_ffmpeg_tools_are_present_and_runnable(self):
         for name in ("ffmpeg", "ffprobe"):
