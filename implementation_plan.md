@@ -142,8 +142,9 @@ Status: Source implementation selesai; unit/static gate lulus; runtime gate menu
 
 ### Gate yang masih pending
 
-- Install/runtime VTracer wheel `0.6.15`.
+- VTracer conversion runtime dengan fixture image.
 - Tambah model LaMa dan inferensi image nyata.
 - Tambah pinned FFmpeg/FFprobe LGPL + checksum/notice.
 - GUI smoke test dan screenshot dibanding visual board.
-- Build PyInstaller dan resource-path/console smoke test.
+- Build PyInstaller: selesai 2026-08-10; detail dicatat di `docs/WORKLOG.md`.
+- Resource-path, console, dan runtime smoke test EXE.

@@ -27,7 +27,7 @@ Worklog bukan pengganti:
 
 ## 2026-08-10 - WhiteFlood UI baseline dan feature services
 
-Status: implementasi source dan static/unit gate selesai; GUI, model, binary FFmpeg, dan build EXE belum dijalankan pada patch ini.
+Status: implementasi source dan static/unit gate selesai; build EXE sudah selesai, sedangkan GUI, model, binary FFmpeg, dan runtime EXE belum diverifikasi.
 
 ### Hasil
 
@@ -46,10 +46,10 @@ Status: implementasi source dan static/unit gate selesai; GUI, model, binary FFm
 
 ### Belum diverifikasi
 
-- VTracer wheel 0.6.15 belum dipasang/diruntime.
+- VTracer wheel 0.6.15 sudah terpasang untuk proses build; conversion runtime belum dijalankan.
 - Model `inpainting_lama_2025jan.onnx` belum diunduh dan inferensi nyata belum dijalankan.
 - Binary FFmpeg LGPL belum dibundel dan pipeline video nyata belum dijalankan.
-- GUI/screenshot, smoke test manual, PyInstaller EXE, console suppression, dan output nyata belum diverifikasi.
+- GUI/screenshot, smoke test manual, runtime PyInstaller EXE, console suppression, dan output nyata belum diverifikasi.
 
 ### File utama
 
@@ -60,6 +60,28 @@ Status: implementasi source dan static/unit gate selesai; GUI, model, binary FFm
 - `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
 - `review-temp/WhiteFlood_BG_Remover_App/features/`
 - `tests/test_features.py`
+
+---
+
+## 2026-08-10 - Build executable setelah implementasi fitur
+
+Status: build PyInstaller selesai; runtime EXE dan smoke test resource belum diverifikasi.
+
+### Bukti verifikasi aktual
+
+- Command: `cmd.exe /c "BUILD_EXE.bat < NUL"` dari `review-temp/WhiteFlood_BG_Remover_App`.
+- PyInstaller mencatat `Build complete!` dan proses selesai tanpa error.
+- Output: `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`.
+- Ukuran: 201,367,265 bytes (192.04 MB).
+- Dibuat: 2026-08-10 09:28:30.
+- SHA-256: `8EC9D22A6A638C23D971B6F1CEFB2137FC2C9D5F867D41D1455CBD92E71401F4`.
+- Versi yang terdeteksi saat build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
+- Warning log PyInstaller berisi 723 baris; salah satu warning yang perlu dicek saat runtime adalah `tbb12.dll` dari optional dependency numba.
+
+### Belum diverifikasi
+
+- Menjalankan EXE, GUI windowed/no-console, resource path `_MEIPASS`, model LaMa, conversion VTracer, dan pipeline FFmpeg.
+- Binary FFmpeg dan model LaMa belum ditempatkan ke bundle; folder `ffmpeg/` dan `assets/models/` baru berisi README/notice.
 
 ---
 

@@ -23,7 +23,7 @@ Status implementasi fitur 2026-08-10:
 - source resmi VTracer tag `0.6.15`, OpenCV Zoo LaMa, dan dokumentasi FFmpeg sudah diaudit sebagai acuan adapter;
 - service Vectorize, mask, LaMa, media, dan video streaming sudah ditambahkan;
 - unittest kontrak service sudah ditambahkan dan lulus;
-- GUI smoke test, VTracer runtime, model LaMa, binary FFmpeg, dan build EXE untuk patch ini belum dijalankan.
+- GUI smoke test, VTracer conversion runtime, model LaMa, dan binary FFmpeg belum dijalankan; build EXE sudah selesai.
 
 ## Tujuan dan batas sistem
 
@@ -180,9 +180,11 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 Build terakhir yang dicek:
 
 - Command: `BUILD_EXE.bat`.
-- Output: `dist/WhiteFlood_BG_Remover.exe`, 200,505,614 bytes, dibuat 2026-08-08 13:34:08.
+- Output: `dist/WhiteFlood_BG_Remover.exe`, 201,367,265 bytes, dibuat 2026-08-10 09:28:30.
 - Mode: PyInstaller `--onefile --windowed`.
-- Hasil runtime EXE belum diuji; log build memuat warning dependency opsional yang perlu dipantau saat smoke test.
+- SHA-256: `8EC9D22A6A638C23D971B6F1CEFB2137FC2C9D5F867D41D1455CBD92E71401F4`.
+- Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
+- Hasil runtime EXE belum diuji; warning log berisi 723 baris, termasuk unresolved `tbb12.dll` dari optional dependency numba.
 
 ## Aturan arsitektur yang dikunci
 
