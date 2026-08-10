@@ -100,6 +100,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 - `_UiEventQueue` menerima callback dari worker tanpa memanggil Tkinter langsung; main thread menguras queue berkala sehingga download tetap berjalan saat window diminimize.
 - Worker single-image, watermark, vectorize, dan batch dilacak oleh `WhiteFloodApp`; close tetap mengirim cancel lalu menunggu worker berhenti sebelum window dihancurkan.
 - `LoadingSpinner` menjadi circular progress determinate untuk workflow yang memiliki progress dan tetap indeterminate saat engine tidak menyediakan angka kontinu.
+- Progress bar horizontal memakai aturan yang sama: tahap inferensi Remove Background yang tidak menyediakan callback kontinu menampilkan animasi indeterminate dan `...`, bukan persentase tebakan; event angka berikutnya mengembalikannya ke determinate.
 - Timer proses terpusat memakai `time.perf_counter()` dan callback `after()` Tkinter; label `Durasi HH:MM:SS` berhenti pada sukses, error, atau cancel untuk single image, vector, watermark, upscale, dan batch.
 - `features/performance.py` menjadi source of truth untuk selector speed; mode hanya tampil pada tool yang memiliki parameter speed nyata dan `White Background` tidak menampilkan kontrol pajangan.
 - Mode `Lambat` memakai thread lebih rendah, tile/context lebih aman, dan encoder lebih konservatif; `Cepat` menjadi default; `Super Cepat` memakai thread lebih tinggi, tile/context lebih kecil, dan meminta konfirmasi warning.

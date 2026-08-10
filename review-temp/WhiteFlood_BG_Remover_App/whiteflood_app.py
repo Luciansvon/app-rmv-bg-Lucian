@@ -161,6 +161,7 @@ MODE_DESC_MAP = {
 REFINE_ORIGINAL = "Original (Rekomendasi)"
 REFINE_SOFT = "Soft (Pinggiran Halus)"
 REFINE_ALPHA_MATTE = "Alpha Matte (Deteksi Rambut)"
+REMOVE_BG_INFERENCE_PHASE = "Menjalankan AI lokal untuk menghitung mask objek..."
 
 C = {
     "bg":           "#0d1014",
@@ -743,7 +744,10 @@ def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive"
         onnx_threads=profile.onnx_threads if profile else None,
     )
     if status_cb:
-        status_cb(70.0)
+        status_cb({
+            "kind": "phase_indeterminate",
+            "message": REMOVE_BG_INFERENCE_PHASE,
+        })
 
     result = rembg_remove(
         rgba,
@@ -1094,6 +1098,7 @@ class WhiteFloodApp(ctk.CTk):
         self._ui_event_job = None
         self._worker_threads = set()
         self._worker_threads_lock = threading.Lock()
+        self._progress_mode = "determinate"
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1918,6 +1923,26 @@ class WhiteFloodApp(ctk.CTk):
         else:
             return 0, False, 0  # Original mode: edge_smooth=0, alpha_matting=False, erode_size=0
 
+    def _set_progress_mode(self, mode):
+        if mode not in {"determinate", "indeterminate"}:
+            raise ValueError(f"Mode progress tidak dikenal: {mode}")
+        if mode == self._progress_mode:
+            return
+        if mode == "determinate":
+            self.progress.stop()
+        self.progress.configure(mode=mode)
+        if mode == "indeterminate":
+            self.progress.start()
+        self._progress_mode = mode
+
+    def _show_indeterminate_progress(self, message):
+        self._set_progress_mode("indeterminate")
+        self.progress_phase_var.set(message)
+        self.progress_percent_var.set("...")
+        self.spinner.set_indeterminate()
+        self.spinner_label.configure(text=message)
+        self.status_text.set(f"{message} [RAM: {get_process_memory_mb()} MB]")
+
     def _apply_status_event(self, event, tool, scale):
         """Render worker/download progress on the Tk main thread."""
         if isinstance(event, dict) and event.get("kind") == "model_download":
@@ -1928,6 +1953,7 @@ class WhiteFloodApp(ctk.CTk):
             phase = f"Mengunduh model {model_name}"
             self.progress_phase_var.set(phase)
             self.progress_percent_var.set(f"{percent}%")
+            self._set_progress_mode("determinate")
             self.progress.configure(progress_color=C["accent"])
             self.progress.set(max(0.01, min(1.0, percent / 100.0)))
             self.spinner.set_progress(percent)
@@ -1941,11 +1967,16 @@ class WhiteFloodApp(ctk.CTk):
             )
             return
 
+        if isinstance(event, dict) and event.get("kind") == "phase_indeterminate":
+            self._show_indeterminate_progress(str(event.get("message", "Memproses...")))
+            return
+
         if isinstance(event, dict) and event.get("kind") == "phase_progress":
             percent = max(0, min(100, int(event.get("percent", 0))))
             message = str(event.get("message", "Memproses..."))
             self.progress_phase_var.set(message)
             self.progress_percent_var.set(f"{percent}%")
+            self._set_progress_mode("determinate")
             self.progress.set(max(0.01, percent / 100.0))
             self.spinner.set_progress(percent)
             self.spinner_label.configure(text=f"{message} {percent}%")
@@ -1962,6 +1993,7 @@ class WhiteFloodApp(ctk.CTk):
                 spinner_text = f"Menghapus background... {percent}%"
             self.progress_phase_var.set(phase)
             self.progress_percent_var.set(f"{percent}%")
+            self._set_progress_mode("determinate")
             self.progress.set(max(0.01, percent / 100.0))
             self.spinner.set_progress(percent)
             self.spinner_label.configure(text=spinner_text)
@@ -1971,15 +2003,10 @@ class WhiteFloodApp(ctk.CTk):
             return
 
         message = str(event)
-        self.progress_phase_var.set(message)
-        self.spinner.set_indeterminate()
-        self.progress_percent_var.set("...")
-        self.spinner_label.configure(text=message)
-        if "siap" in message.lower():
-            self.progress.set(0.4)
-        self.status_text.set(f"{message} [RAM: {get_process_memory_mb()} MB]")
+        self._show_indeterminate_progress(message)
 
     def _show_processing_overlay(self, label, percent=None):
+        self._set_progress_mode("determinate")
         self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.spinner_frame.lift()
         if percent is None:
@@ -1990,6 +2017,7 @@ class WhiteFloodApp(ctk.CTk):
         self.spinner_label.configure(text=label)
 
     def _hide_processing_overlay(self):
+        self._set_progress_mode("determinate")
         self.spinner.stop()
         self.spinner_frame.place_forget()
 

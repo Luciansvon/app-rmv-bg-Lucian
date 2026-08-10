@@ -412,3 +412,48 @@ Belum ada bukti runtime bahwa file model nyata selesai saat window diminimize; p
 
 - `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
 - `tests/test_features.py`
+
+## ERR-009 - Progress Remove Background berhenti di 70%
+
+Tanggal: 2026-08-10
+Versi: 2.6.0
+Area: UI | Remove Background
+Status: Diperbaiki
+
+### Gejala
+
+Saat Hapus Background dimulai, progress naik dari loading awal ke 70% lalu tampak
+stuck. Screenshot user menunjukkan status tersebut setelah proses berjalan cukup lama.
+
+### Root cause
+
+`ai_remove_bg()` mengirim progress numerik 70% tepat sebelum `rembg_remove()` menjalankan
+inferensi AI. Fungsi rembg tidak menyediakan callback progress kontinu untuk tahap ini,
+sehingga UI menampilkan angka yang tidak bisa diperbarui sampai inferensi selesai.
+
+### Solusi
+
+- Mengganti event 70% dengan fase `phase_indeterminate` berlabel
+  `Menjalankan AI lokal untuk menghitung mask objek...`.
+- Mengubah progress bar horizontal ke mode indeterminate selama fase tanpa progress
+  kontinu; circular spinner tetap bergerak.
+- Mengembalikan progress bar ke mode determinate saat event angka berikutnya diterima
+  atau workflow selesai.
+
+### Perlindungan regresi
+
+Unittest memakai engine rembg palsu untuk memastikan fase indeterminate diterima sebelum
+inferensi dan menguji perpindahan progress bar kembali ke determinate.
+
+### Bukti verifikasi aktual
+
+- Syntax check source dijalankan.
+- `python -m unittest discover -s tests -v` dijalankan.
+- `git diff --check` dijalankan.
+- GUI dengan model nyata belum dijalankan pada sesi ini.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `tests/test_features.py`
+- `docs/ARCHITECTURE.md`
