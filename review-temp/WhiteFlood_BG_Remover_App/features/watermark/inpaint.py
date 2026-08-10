@@ -7,6 +7,7 @@ from PIL import Image
 import numpy as np
 
 from ..model_download import LAMA_MODEL, download_model, find_model, persistent_model_dir
+from ..performance import get_processing_profile
 
 
 class LamaInpaintError(RuntimeError):
@@ -83,7 +84,7 @@ class LamaInpaintService:
             except Exception:
                 pass
 
-    def inpaint(self, image, mask, cancel_event=None, progress_cb=None):
+    def inpaint(self, image, mask, cancel_event=None, progress_cb=None, processing_profile=None):
         if not isinstance(image, Image.Image) or not isinstance(mask, Image.Image):
             raise LamaInpaintError("Input inpaint harus berupa PIL.Image.")
         if image.size != mask.size:
@@ -107,7 +108,10 @@ class LamaInpaintService:
         bbox = source_mask.getbbox()
         if bbox is None:
             raise LamaInpaintError("Mask watermark masih kosong.")
-        tiles = self._build_tiles(bbox, source_rgb.size)
+        profile = get_processing_profile(processing_profile) if processing_profile else None
+        context = profile.lama_context if profile else None
+        overlap = profile.lama_overlap if profile else None
+        tiles = self._build_tiles(bbox, source_rgb.size, context=context, overlap=overlap)
         if progress_cb is not None:
             progress_cb(0, len(tiles))
         result = np.asarray(source_rgb, dtype=np.uint8).copy()
@@ -141,7 +145,7 @@ class LamaInpaintService:
         return output
 
     @staticmethod
-    def _build_tiles(bbox, size, context=None):
+    def _build_tiles(bbox, size, context=None, overlap=None):
         width, height = size
         left, top, right, bottom = bbox
         if context is None:
@@ -153,10 +157,10 @@ class LamaInpaintService:
             min(height, bottom + context),
         )
         x_positions = LamaInpaintService._axis_positions(
-            outer[0], outer[2], width
+            outer[0], outer[2], width, overlap=overlap
         )
         y_positions = LamaInpaintService._axis_positions(
-            outer[1], outer[3], height
+            outer[1], outer[3], height, overlap=overlap
         )
         return [
             (x, y, min(width, x + MODEL_INPUT_SIZE), min(height, y + MODEL_INPUT_SIZE))
@@ -165,7 +169,7 @@ class LamaInpaintService:
         ]
 
     @staticmethod
-    def _axis_positions(start, end, limit):
+    def _axis_positions(start, end, limit, overlap=None):
         tile = MODEL_INPUT_SIZE
         if limit <= tile:
             return [0]
@@ -174,7 +178,9 @@ class LamaInpaintService:
         end = max(start, min(int(end), limit))
         if end - start <= tile:
             return [start]
-        step = tile - TILE_OVERLAP
+        selected_overlap = TILE_OVERLAP if overlap is None else int(overlap)
+        selected_overlap = max(0, min(tile - 1, selected_overlap))
+        step = tile - selected_overlap
         positions = []
         position = start
         while True:

@@ -9,6 +9,7 @@ from PIL import Image
 import numpy as np
 
 from .inpaint import LamaInpaintService
+from ..performance import get_processing_profile
 from .media import (
     MediaError,
     MediaInfo,
@@ -112,7 +113,7 @@ class VideoProcessor:
         except Exception as exc:
             raise VideoError(f"Frame pertama video tidak valid: {exc}") from exc
 
-    def process(self, input_path, output_path, mask, cancel_event=None, progress_cb=None):
+    def process(self, input_path, output_path, mask, cancel_event=None, progress_cb=None, processing_profile=None):
         source = Path(input_path)
         destination = ensure_not_overwriting(output_path)
         try:
@@ -144,7 +145,7 @@ class VideoProcessor:
             try:
                 processed_count = self._run_pass(
                     source, partial, info, mask, cancel_event, progress_cb,
-                    include_audio=info.has_audio,
+                    include_audio=info.has_audio, processing_profile=processing_profile,
                 )
             except VideoError as exc:
                 if (
@@ -161,7 +162,7 @@ class VideoProcessor:
                     partial.unlink()
                 processed_count = self._run_pass(
                     source, partial, info, mask, cancel_event, progress_cb,
-                    include_audio=False,
+                    include_audio=False, processing_profile=processing_profile,
                 )
             if cancel_event is not None and cancel_event.is_set():
                 raise VideoError("Proses video dibatalkan.")
@@ -215,7 +216,7 @@ class VideoProcessor:
             if abs(output_info.frame_count - processed_count) > 2:
                 raise VideoError("Jumlah frame output berbeda dari frame yang diproses.")
 
-    def _run_pass(self, source, partial, info, mask, cancel_event, progress_cb, include_audio):
+    def _run_pass(self, source, partial, info, mask, cancel_event, progress_cb, include_audio, processing_profile=None):
         ffmpeg = self._ffmpeg()
         frame_bytes = info.width * info.height * 3
         decoder = None
@@ -252,6 +253,7 @@ class VideoProcessor:
                 partial,
                 info,
                 include_audio,
+                processing_profile=processing_profile,
             )
             encoder = subprocess.Popen(
                 encoder_command,
@@ -274,7 +276,15 @@ class VideoProcessor:
                     raise VideoError("FFmpeg mengembalikan frame video yang tidak lengkap.")
                 bgr = np.frombuffer(chunk, dtype=np.uint8).reshape((info.height, info.width, 3))
                 frame = Image.fromarray(bgr[:, :, ::-1].copy(), mode="RGB")
-                processed_frame = self.inpaint_service.inpaint(frame, mask, cancel_event)
+                if processing_profile:
+                    processed_frame = self.inpaint_service.inpaint(
+                        frame,
+                        mask,
+                        cancel_event,
+                        processing_profile=processing_profile,
+                    )
+                else:
+                    processed_frame = self.inpaint_service.inpaint(frame, mask, cancel_event)
                 if self._last_preview is None:
                     self._last_preview = processed_frame.copy()
                 output_bgr = np.asarray(processed_frame.convert("RGB"), dtype=np.uint8)[:, :, ::-1]
@@ -326,7 +336,7 @@ class VideoProcessor:
                             pass
 
     @staticmethod
-    def _build_encoder_command(ffmpeg, source, partial, info, include_audio):
+    def _build_encoder_command(ffmpeg, source, partial, info, include_audio, processing_profile=None):
         command = [
             str(ffmpeg),
             "-y",
@@ -347,6 +357,9 @@ class VideoProcessor:
             ]
         else:
             command += ["-map", "0:v:0", "-an"]
+        if processing_profile:
+            profile = get_processing_profile(processing_profile)
+            command += ["-threads", str(profile.ffmpeg_threads)]
         command += [
             "-c:v", "mpeg4",
             "-q:v", "3",

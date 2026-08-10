@@ -7,6 +7,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 from .presets import get_preset
+from ..performance import apply_vector_profile
 
 
 SUPPORTED_RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -57,7 +58,7 @@ class VectorizeService:
     package_name = "vtracer"
     package_version = "0.6.15"
 
-    def convert(self, input_path, preset, cancel_event=None, status_cb=None):
+    def convert(self, input_path, preset, cancel_event=None, status_cb=None, processing_profile=None):
         source = Path(input_path)
         if not source.is_file():
             raise VectorizeError(f"File input tidak ditemukan: {source}")
@@ -90,6 +91,7 @@ class VectorizeService:
             )
 
         selected = get_preset(preset)
+        selected_config = apply_vector_profile(selected.config, processing_profile) if processing_profile else dict(selected.config)
         _notify(status_cb, {"kind": "phase_progress", "percent": 10, "message": "Menyiapkan vectorize lokal..."})
         with tempfile.TemporaryDirectory(prefix="whiteflood-vector-") as temp_dir:
             temp_svg = Path(temp_dir) / "result.svg"
@@ -98,7 +100,7 @@ class VectorizeService:
                 converter(
                     str(source),
                     str(temp_svg),
-                    **dict(selected.config),
+                    **selected_config,
                 )
             except Exception as exc:
                 raise VectorizeError(f"VTracer gagal mengubah gambar: {exc}") from exc

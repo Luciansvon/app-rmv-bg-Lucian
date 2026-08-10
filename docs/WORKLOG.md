@@ -285,3 +285,30 @@ Status: source patch, unit test, dan build EXE selesai; GUI runtime masih pendin
 ### Gate pending
 
 - GUI smoke test untuk memastikan label timer terlihat dan berhenti di semua workflow.
+
+---
+
+## 2026-08-10 - Processing speed modes
+
+Status: source implementation, unit test, dan build EXE selesai; GUI runtime masih pending.
+
+### Perubahan
+
+- Menambahkan selector `Lambat`, `Cepat`, dan `Super Cepat` pada workflow yang memiliki trade-off speed nyata.
+- `Cepat` menjadi default; `Lambat` memprioritaskan resource lebih rendah dan konteks LaMa lebih aman.
+- `Super Cepat` memakai thread/resource lebih tinggi, tile/context lebih kecil, serta meminta konfirmasi warning sebelum proses.
+- Profil yang sama dipakai single image dan batch untuk Remove Background, Upscale, Vectorize, dan Remove Watermark.
+- `White Background` tidak menampilkan selector karena algoritmanya tidak memiliki parameter speed yang aman untuk diubah.
+
+### Bukti verifikasi aktual
+
+- Syntax check untuk source dan service lulus.
+- `python -m unittest discover -s tests -v` lulus: 14 test.
+- `git diff --check` lulus; warning hanya normalisasi LF/CRLF Git.
+- Build `BUILD_EXE.bat` lulus dalam sekitar 5 menit 56 detik.
+- EXE: `dist/WhiteFlood_BG_Remover.exe`, 295.693.085 bytes, dibuat 2026-08-10 11:48:36.
+- SHA-256: `BBB932670E8AB633DDC18E8D872233D93D407674E02100479FF5C98E802EFF77`.
+
+### Gate pending
+
+- GUI smoke test selector, warning, dan parameter speed di workflow utama.

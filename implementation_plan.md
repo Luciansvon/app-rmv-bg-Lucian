@@ -192,3 +192,31 @@ Status: Source implementation, unit test, dan build EXE selesai; GUI runtime gat
 ### Gate pending
 
 - GUI smoke test visual.
+
+## 2026-08-10 - Processing speed modes
+
+Status: source implementation, unit test, dan build EXE selesai; GUI runtime gate pending.
+
+### Keputusan desain
+
+- Selector `Lambat`, `Cepat`, dan `Super Cepat` tampil hanya saat alat yang aktif memiliki parameter speed yang nyata.
+- Default `Cepat` menjaga perilaku seimbang dan tidak memunculkan modal tambahan.
+- `Lambat` memprioritaskan penggunaan resource yang lebih rendah serta konteks inpaint lebih aman.
+- `Super Cepat` memprioritaskan waktu dengan thread/resource lebih tinggi; UI menampilkan peringatan sebelum proses dan menjelaskan trade-off kualitas/hasil.
+- Dimensi output, alpha, format, audio policy, dan file input tetap tidak berubah.
+
+### Implementasi
+
+- Profil speed dipusatkan agar single image dan batch memakai konfigurasi yang sama.
+- Profil diteruskan ke ONNX Remove Background, Real-ESRGAN, VTracer, LaMa tile/context, dan thread encoder FFmpeg.
+- Tambahkan unit test untuk nama profil, konfigurasi valid, dan guard output.
+
+### Gate pending
+
+- GUI smoke test untuk selector, warning, dan tiga workflow utama.
+
+### Bukti build
+
+- `BUILD_EXE.bat` lulus dalam sekitar 5 menit 56 detik.
+- EXE: `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`, 295.693.085 bytes, dibuat 2026-08-10 11:48:36.
+- SHA-256: `BBB932670E8AB633DDC18E8D872233D93D407674E02100479FF5C98E802EFF77`.

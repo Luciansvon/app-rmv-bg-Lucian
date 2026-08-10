@@ -23,6 +23,7 @@ Status implementasi fitur 2026-08-10:
 - source resmi VTracer tag `0.6.15`, OpenCV Zoo LaMa, dan dokumentasi FFmpeg sudah diaudit sebagai acuan adapter;
 - service Vectorize, mask, LaMa, media, dan video streaming sudah ditambahkan;
 - downloader model persisten, prompt persetujuan, progress byte di UI, dan circular progress workflow sudah ditambahkan ke source;
+- profil speed `Lambat`, `Cepat`, dan `Super Cepat` sudah ditambahkan dengan warning UI dan parameter konkret per engine;
 - crop logo berbasis alpha untuk title bar dan header sidebar sudah ditambahkan ke source;
 - unittest kontrak service sudah ditambahkan dan lulus;
 - GUI smoke test, VTracer conversion runtime, model LaMa, dan binary FFmpeg belum dijalankan; build patch UI sudah lulus tetapi runtime EXE belum diuji.
@@ -75,6 +76,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 |-- build_exe.py             # konfigurasi command PyInstaller
 |-- logo.ico, logo.png       # aset branding
 |-- features/
+|   |-- performance.py       # profil speed/resource lintas workflow
 |   |-- model_download.py      # downloader model persisten dan atomic
 |   |-- vectorize/            # preset dan adapter VTracer
 |   `-- watermark/            # mask, LaMa, media, dan video pipeline
@@ -97,6 +99,8 @@ review-temp/WhiteFlood_BG_Remover_App/
 - Downloader `features/model_download.py` menyimpan LaMa di folder user yang writable; dialog konfirmasi muncul sebelum download pertama.
 - `LoadingSpinner` menjadi circular progress determinate untuk workflow yang memiliki progress dan tetap indeterminate saat engine tidak menyediakan angka kontinu.
 - Timer proses terpusat memakai `time.perf_counter()` dan callback `after()` Tkinter; label `Durasi HH:MM:SS` berhenti pada sukses, error, atau cancel untuk single image, vector, watermark, upscale, dan batch.
+- `features/performance.py` menjadi source of truth untuk selector speed; mode hanya tampil pada tool yang memiliki parameter speed nyata dan `White Background` tidak menampilkan kontrol pajangan.
+- Mode `Lambat` memakai thread lebih rendah, tile/context lebih aman, dan encoder lebih konservatif; `Cepat` menjadi default; `Super Cepat` memakai thread lebih tinggi, tile/context lebih kecil, dan meminta konfirmasi warning.
 
 ### Single-image workflow
 
@@ -112,6 +116,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 
 - Mode AI memakai `ai_remove_bg`, session lazy-load, dan model `birefnet-*` melalui `rembg`.
 - Mode White Background memakai `flood_remove_bg` untuk background putih/abu-abu polos tanpa model AI.
+- Mode speed diteruskan ke session ONNX melalui `intra_op_num_threads`; perpindahan profil dapat membuat session lama dilepas agar konfigurasi thread tidak tercampur.
 - `refine_alpha_mask` menangani penghalusan atau erosi alpha sesuai pengaturan.
 - Pipeline menetapkan ukuran yang diharapkan sama dengan ukuran input.
 - Hasil dikonversi ke RGBA dan disimpan sebagai PNG.
@@ -120,6 +125,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 
 - `upscale_image_alpha_safe` membuat folder temporary untuk input dan output backend.
 - Backend eksternal dipanggil melalui `subprocess.Popen`.
+- Profil speed mengatur tile NCNN dan job string `-j`; model, alpha, dan kontrak dimensi tidak berubah.
 - Skala 2x atau 4x dikirim langsung ke backend; skala 8x memakai pass AI 4x lalu resize Lanczos 2x.
 - Gambar dengan alpha dikembalikan sebagai RGBA; gambar tanpa alpha tetap dapat dikembalikan sebagai RGB.
 - `process_file` menetapkan ukuran yang diharapkan sebagai `(lebar * skala, tinggi * skala)`.
@@ -139,6 +145,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 - Input dibatasi ke PNG, JPG/JPEG, WebP, dan BMP.
 - VTracer bekerja di temporary directory. XML root SVG dan elemen grafis diverifikasi sebelum hasil disimpan secara atomic.
 - Progress memakai tahap 10/25/85/100% untuk feedback visual; VTracer tidak menyediakan persentase kontinu yang bisa dipercaya.
+- Profil `Cepat`/`Super Cepat` dapat membatasi iterasi/path precision dan menambah speckle filter untuk memendekkan kerja VTracer; output tetap divalidasi sebagai SVG.
 - Preview tidak merender SVG native; UI hanya menampilkan status validasi dan informasi output.
 
 ### Remove Watermark Image
@@ -146,6 +153,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 - `MaskCanvas` menyimpan mask L pada ukuran pixel source, sementara canvas hanya menampilkan preview letterbox + zoom.
 - Brush, rectangle, eraser, clear, undo/redo, dan multi-stroke tersedia tanpa tracking/auto-detect.
 - `LamaInpaintService` melakukan ROI context dan tile 512px overlap; komposisi hanya mengganti area mask.
+- Profil speed mengatur context/overlap LaMa; `Super Cepat` memberi warning karena konteks lebih kecil dapat meninggalkan seam/halo pada watermark kompleks.
 - Model LaMa dicari dari bundle/source lalu folder user `%LOCALAPPDATA%\\WhiteFlood\\models`; jika belum ada, user ditanya sebelum downloader berjalan.
 - Progress image watermark mengikuti tile yang selesai dan progress video mengikuti frame yang selesai.
 - Alpha input dipasang kembali ke hasil dan ukuran output harus sama persis.
@@ -154,6 +162,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 
 - `probe_video` memakai ffprobe bundle dan mengembalikan ukuran visual setelah autorotate, FPS nominal/average, durasi, audio, rotasi, dan VFR warning.
 - `VideoProcessor` membaca raw BGR frame satu per satu dari FFmpeg, memproses dengan mask yang sama, lalu menulis frame ke encoder MP4.
+- Profil speed diteruskan ke LaMa per frame dan menambahkan jumlah thread encoder FFmpeg tanpa mengubah container, audio policy, FPS, atau validasi output.
 - Audio dicoba dengan `-c:a copy`; fallback video-only hanya dilakukan jika stderr encoder mengindikasikan masalah mux audio.
 - Partial output memakai ekstensi `.mp4` agar FFmpeg mengenali container, divalidasi dengan ffprobe sebelum dipindahkan, lalu dibersihkan saat cancel/error.
 - Event cancellation menghentikan loop dan terminasi subprocess setelah frame yang sedang aman dilepas.
@@ -188,9 +197,9 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 Build terakhir yang dicek:
 
 - Command: `BUILD_EXE.bat`.
-- Output: `dist/WhiteFlood_BG_Remover.exe`, 295,689,770 bytes, dibuat 2026-08-10 11:22:19.
+- Output: `dist/WhiteFlood_BG_Remover.exe`, 295,693,085 bytes, dibuat 2026-08-10 11:48:36.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `92CADFB632FACACD8F9828AC08840F2A8A22F7648D96E998053004A64BAB89E8`.
+- SHA-256: `BBB932670E8AB633DDC18E8D872233D93D407674E02100479FF5C98E802EFF77`.
 - Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
 - Hasil runtime EXE belum diuji; warning log berisi 723 baris, termasuk unresolved `tbb12.dll` dari optional dependency numba.

@@ -51,6 +51,7 @@ WhiteFlood is a local-first desktop workbench for furniture/catalog media. It ke
 - Before/After split-slider preview with cached display bitmaps for smoother dragging.
 - Circular percentage progress is shown while Remove Background, Upscale, Vectorize, and Watermark workflows run.
 - Live processing duration is shown as `Durasi HH:MM:SS` and remains visible in the completed result status.
+- Processing speed profiles are available as `Lambat`, `Cepat`, and `Super Cepat`; the selected profile shows its resource/quality warning before processing.
 - Before a missing AI model is downloaded, WhiteFlood asks for confirmation and shows percentage plus downloaded/total size inside the app.
 - Single-image and folder batch processing.
 - Batch remains available for Remove Background, Upscale, and Vectorize Image. Watermark batch/tracking is intentionally deferred.

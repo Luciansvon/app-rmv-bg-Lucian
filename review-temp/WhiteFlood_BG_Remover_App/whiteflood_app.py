@@ -25,6 +25,11 @@ from PIL import Image, ImageFilter, ImageDraw, ImageTk
 import numpy as np
 
 from features.vectorize import VectorizeError, VectorizeService, preset_names
+from features.performance import (
+    PROCESSING_BALANCED,
+    get_processing_profile,
+    processing_profile_names,
+)
 from features.watermark import (
     LamaInpaintError,
     LamaInpaintService,
@@ -111,6 +116,7 @@ REMBG_OK = importlib.util.find_spec("rembg") is not None
 # Cache for rembg session (lazy loaded)
 _rembg_session = None
 _rembg_model_name = None
+_rembg_session_threads = None
 
 # ═══════════════════════════════════════════════════════════
 #  Theme & Constants
@@ -551,17 +557,22 @@ class _ModelDownloadProgress:
 #  AI Background Removal Engine
 # ═══════════════════════════════════════════════════════════
 
-def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
+def _get_rembg_session(model_name="birefnet-massive", status_cb=None, onnx_threads=None):
     """Lazy-load rembg and cache session with ONNX SessionOptions to prevent 12GB RAM arenas."""
-    global _rembg_session, _rembg_model_name
+    global _rembg_session, _rembg_model_name, _rembg_session_threads
+    selected_threads = max(1, int(onnx_threads)) if onnx_threads else None
 
     if _rembg_session is not None:
-        if _rembg_model_name == model_name:
+        if (
+            _rembg_model_name == model_name
+            and _rembg_session_threads == selected_threads
+        ):
             return _rembg_session
         else:
             old_session = _rembg_session
             _rembg_session = None
             _rembg_model_name = None
+            _rembg_session_threads = None
             try:
                 del old_session
                 gc.collect()
@@ -576,6 +587,9 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
     opts = ort.SessionOptions()
     opts.enable_cpu_mem_arena = False
     opts.enable_mem_pattern = False
+    if selected_threads is not None:
+        opts.intra_op_num_threads = selected_threads
+        opts.inter_op_num_threads = 1
 
     max_retries = 3
     last_err = None
@@ -603,6 +617,7 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None):
                 pooch.retrieve = original_retrieve
 
             _rembg_model_name = model_name
+            _rembg_session_threads = selected_threads
 
             if status_cb:
                 status_cb(f"Model '{model_name}' siap")
@@ -684,7 +699,7 @@ def refine_alpha_mask(alpha_img, edge_smooth=0, erode_size=0):
 
 
 def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive",
-                 alpha_matting=False, status_cb=None):
+                 alpha_matting=False, status_cb=None, processing_profile=None):
     """Remove background using neural network preserving exact pixel dimensions."""
     if not REMBG_OK:
         raise RuntimeError(
@@ -699,7 +714,12 @@ def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive"
 
     if status_cb:
         status_cb(5.0)
-    session = _get_rembg_session(model_name, status_cb=status_cb)
+    profile = get_processing_profile(processing_profile) if processing_profile else None
+    session = _get_rembg_session(
+        model_name,
+        status_cb=status_cb,
+        onnx_threads=profile.onnx_threads if profile else None,
+    )
     if status_cb:
         status_cb(70.0)
 
@@ -808,7 +828,7 @@ def flood_remove_bg(img, threshold=220, fringe=30,
 #  Alpha-Safe Upscayl NCNN Vulkan Upscaler Engine (2x / 4x / 8x)
 # ═══════════════════════════════════════════════════════════
 
-def upscale_image_alpha_safe(img, scale=2, status_cb=None):
+def upscale_image_alpha_safe(img, scale=2, status_cb=None, processing_profile=None):
     """Upscale through Upscayl while preserving PNG alpha.
 
     8x uses the supported 4x AI pass, then a Lanczos 2x resize for the
@@ -821,6 +841,7 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None):
     new_size = (original_size[0] * scale, original_size[1] * scale)
     ai_scale = UPSCAYL_AI_MAX_SCALE if scale == 8 else scale
     ai_size = (original_size[0] * ai_scale, original_size[1] * ai_scale)
+    profile = get_processing_profile(processing_profile) if processing_profile else None
 
     engine_dir, exe_path, models_dir = _get_realesrgan_paths()
 
@@ -856,6 +877,11 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None):
             "-s", str(ai_scale),
             "-f", "png",
         ]
+        if profile:
+            cmd += [
+                "-t", str(profile.upscale_tile),
+                "-j", profile.upscale_jobs,
+            ]
 
         creationflags = 0
         if sys.platform == "win32":
@@ -944,7 +970,7 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None):
 
 def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
                  model_name="birefnet-massive", alpha_matting=False, erode_size=0,
-                 tool=TOOL_REMOVE_BG, scale=2, status_cb=None):
+                 tool=TOOL_REMOVE_BG, scale=2, status_cb=None, processing_profile=None):
     """Process a single file preserving rules for Remove BG or Upscale."""
     src, dst = Path(src), Path(dst)
     with Image.open(src) as img:
@@ -952,7 +978,12 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
         meta = metadata_for_save(img)
 
         if tool == TOOL_UPSCALE:
-            result = upscale_image_alpha_safe(img, scale=scale, status_cb=status_cb)
+            result = upscale_image_alpha_safe(
+                img,
+                scale=scale,
+                status_cb=status_cb,
+                processing_profile=processing_profile,
+            )
             expected_size = (original_size[0] * scale, original_size[1] * scale)
         else:
             if mode == MODE_WHITE:
@@ -962,6 +993,7 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
                     img, edge_smooth=edge_smooth, erode_size=erode_size,
                     model_name=model_name, alpha_matting=alpha_matting,
                     status_cb=status_cb,
+                    processing_profile=processing_profile,
                 )
             expected_size = original_size
 
@@ -1002,6 +1034,7 @@ class WhiteFloodApp(ctk.CTk):
         self.refine_var = ctk.StringVar(value=REFINE_ORIGINAL)
         self.scale_var = ctk.IntVar(value=2)
         self.vector_preset_var = ctk.StringVar(value="Logo")
+        self.processing_mode_var = ctk.StringVar(value=PROCESSING_BALANCED)
         self.watermark_mode_var = ctk.StringVar(value=WATERMARK_IMAGE)
         self.watermark_brush_var = ctk.IntVar(value=50)
         self.threshold_var = ctk.IntVar(value=220)
@@ -1386,6 +1419,36 @@ class WhiteFloodApp(ctk.CTk):
             font=ctk.CTkFont(size=10), text_color=C["dim"], wraplength=260, justify="left",
         ).pack(anchor="w", pady=(2, 10))
 
+        # Shared processing profile for workflows with real speed/resource trade-offs
+        self.frame_processing_settings = ctk.CTkFrame(sidebar, fg_color="transparent")
+        self._section_label(self.frame_processing_settings, "KECEPATAN PROSES")
+        self.processing_mode_menu = ctk.CTkSegmentedButton(
+            self.frame_processing_settings,
+            values=list(processing_profile_names()),
+            variable=self.processing_mode_var,
+            command=self._on_processing_mode_change,
+            fg_color=C["card_alt"], selected_color=C["accent"],
+            selected_hover_color=C["accent_hover"], unselected_color=C["card_alt"],
+            unselected_hover_color=C["border"], text_color=C["text"],
+            height=30,
+        )
+        self.processing_mode_menu.pack(fill="x", pady=(0, 5))
+        self.processing_mode_desc = ctk.CTkLabel(
+            self.frame_processing_settings,
+            text="",
+            font=ctk.CTkFont(size=10), text_color=C["dim"],
+            wraplength=260, justify="left",
+        )
+        self.processing_mode_desc.pack(anchor="w", pady=(0, 3))
+        self.processing_mode_warning = ctk.CTkLabel(
+            self.frame_processing_settings,
+            text="",
+            font=ctk.CTkFont(size=10, weight="bold"), text_color=C["purple"],
+            wraplength=260, justify="left",
+        )
+        self.processing_mode_warning.pack(anchor="w", pady=(0, 10))
+        self._update_processing_mode_desc()
+
         # Single Image Actions
         self._lbl_single_section = self._section_label(sidebar, "FILE & HASIL")
 
@@ -1675,6 +1738,57 @@ class WhiteFloodApp(ctk.CTk):
     def _on_mode_change(self, _=None):
         self._toggle_flood_settings()
         self._update_mode_desc()
+        self._update_processing_profile_visibility()
+
+    def _processing_tool_label(self):
+        if self.active_tool == TOOL_REMOVE_BG:
+            return "Remove Background"
+        if self.active_tool == TOOL_UPSCALE:
+            return "Upscale"
+        if self.active_tool == TOOL_VECTORIZE:
+            return "Vectorize Image"
+        if self.active_tool == TOOL_WATERMARK:
+            return f"Remove Watermark {self.watermark_mode_var.get()}"
+        return "alat aktif"
+
+    def _update_processing_mode_desc(self):
+        profile = get_processing_profile(self.processing_mode_var.get())
+        tool_label = self._processing_tool_label()
+        self.processing_mode_desc.configure(
+            text=f"{profile.description}\nDipakai untuk {tool_label}."
+        )
+        self.processing_mode_warning.configure(text=profile.warning)
+
+    def _processing_profile_applies(self):
+        return not (
+            self.active_tool == TOOL_REMOVE_BG
+            and self.mode_var.get() == MODE_WHITE
+        )
+
+    def _update_processing_profile_visibility(self):
+        self.frame_processing_settings.pack_forget()
+        if self.active_tool != TOOL_WORKSPACE and self._processing_profile_applies():
+            self.frame_processing_settings.pack(fill="x", before=self._lbl_single_section)
+
+    def _on_processing_mode_change(self, _=None):
+        self._update_processing_mode_desc()
+        if not self._processing and self.active_tool != TOOL_WORKSPACE:
+            self.status_text.set(
+                f"Mode {self.processing_mode_var.get()} dipilih untuk {self._processing_tool_label()}."
+            )
+
+    def _confirm_processing_profile(self):
+        if not self._processing_profile_applies():
+            return True
+        profile = get_processing_profile(self.processing_mode_var.get())
+        if not profile.requires_confirmation:
+            return True
+        return messagebox.askyesno(
+            APP_NAME,
+            f"Mode {profile.label} untuk {self._processing_tool_label()}.\n\n"
+            f"{profile.description}\n\n{profile.warning}\n\n"
+            "Lanjutkan proses dengan mode ini?",
+        )
 
     def _update_mode_desc(self):
         mode = self.mode_var.get()
@@ -1933,12 +2047,13 @@ class WhiteFloodApp(ctk.CTk):
         self._update_button_states()
 
     def _release_rembg_session(self):
-        global _rembg_session, _rembg_model_name
+        global _rembg_session, _rembg_model_name, _rembg_session_threads
         if _rembg_session is None:
             return
         old_session = _rembg_session
         _rembg_session = None
         _rembg_model_name = None
+        _rembg_session_threads = None
         try:
             del old_session
             gc.collect()
@@ -2034,6 +2149,7 @@ class WhiteFloodApp(ctk.CTk):
         self.file_state_label.configure(text="Belum ada file dipilih")
         self.preview_state_var.set(f"SIAP  /  REMOVE WATERMARK {value.upper()}")
         self.status_text.set(f"Mode {value}: pilih file untuk mulai.")
+        self._update_processing_mode_desc()
         self._set_tool_nav_active()
         self._show_active_surface()
         self._update_batch_preview()
@@ -2086,6 +2202,7 @@ class WhiteFloodApp(ctk.CTk):
             self.frame_upscale_settings,
             self.frame_vector_settings,
             self.frame_watermark_settings,
+            self.frame_processing_settings,
         ):
             frame.pack_forget()
 
@@ -2109,6 +2226,9 @@ class WhiteFloodApp(ctk.CTk):
         else:
             self.preview_state_var.set("SIAP  /  WORKSPACE")
             self.status_text.set("Pilih alat untuk mulai. File tidak diproses otomatis.")
+
+        self._update_processing_profile_visibility()
+        self._update_processing_mode_desc()
 
         # Retain original image in preview if available
         if self._original is not None and tool != TOOL_WATERMARK:
@@ -2262,6 +2382,9 @@ class WhiteFloodApp(ctk.CTk):
     def _do_vector_process(self):
         if self._processing or self._original is None or self._src_path is None:
             return
+        if not self._confirm_processing_profile():
+            return
+        processing_profile = self.processing_mode_var.get()
         self._processing = True
         self._start_process_timer()
         self._cancel_event.clear()
@@ -2286,6 +2409,7 @@ class WhiteFloodApp(ctk.CTk):
                     preset,
                     cancel_event=self._cancel_event,
                     status_cb=status_cb,
+                    processing_profile=processing_profile,
                 )
             except Exception as exc:
                 self.after(0, lambda error=str(exc): self._on_feature_err(error, TOOL_VECTORIZE))
@@ -2348,6 +2472,9 @@ class WhiteFloodApp(ctk.CTk):
         if mask.getbbox() is None:
             messagebox.showwarning(APP_NAME, "Gambar area watermark dulu sebelum proses.")
             return
+        if not self._confirm_processing_profile():
+            return
+        processing_profile = self.processing_mode_var.get()
 
         if not LamaInpaintService.model_available():
             answer = messagebox.askyesno(
@@ -2409,6 +2536,7 @@ class WhiteFloodApp(ctk.CTk):
                         mask,
                         cancel_event=self._cancel_event,
                         progress_cb=progress_cb,
+                        processing_profile=processing_profile,
                     )
                 else:
                     result = self._lama_service.inpaint(
@@ -2416,6 +2544,7 @@ class WhiteFloodApp(ctk.CTk):
                         mask,
                         cancel_event=self._cancel_event,
                         progress_cb=image_progress_cb,
+                        processing_profile=processing_profile,
                     )
             except Exception as exc:
                 self.after(0, lambda error=str(exc): self._on_feature_err(error, TOOL_WATERMARK))
@@ -2485,6 +2614,9 @@ class WhiteFloodApp(ctk.CTk):
         if self.active_tool == TOOL_WATERMARK:
             self._do_watermark_process()
             return
+        if not self._confirm_processing_profile():
+            return
+        processing_profile = self.processing_mode_var.get()
         self._release_lama_service()
         self._processing = True
         self._cancel_event.clear()
@@ -2540,13 +2672,19 @@ class WhiteFloodApp(ctk.CTk):
                 self.after(0, lambda: (self.progress.set(0.15), self.spinner.set_progress(15)))
 
                 if tool == TOOL_UPSCALE:
-                    result = upscale_image_alpha_safe(self._original, scale=scale, status_cb=_status_cb)
+                    result = upscale_image_alpha_safe(
+                        self._original,
+                        scale=scale,
+                        status_cb=_status_cb,
+                        processing_profile=processing_profile,
+                    )
                 else:
                     if is_ai:
                         result = ai_remove_bg(
                             self._original, edge_smooth=es, erode_size=er,
                             model_name=internal_model, alpha_matting=am,
                             status_cb=_status_cb,
+                            processing_profile=processing_profile,
                         )
                     else:
                         _status_cb(25.0)
@@ -2783,8 +2921,11 @@ class WhiteFloodApp(ctk.CTk):
                 "Batch saat ini hanya tersedia untuk Hapus Background, Upscale, dan Vectorize Image.",
             )
             return
+        if not self._confirm_processing_profile():
+            return
         mode = self.mode_var.get()
         scale = self.scale_var.get()
+        processing_profile = self.processing_mode_var.get()
         internal_model = MODE_MAP.get(mode, "birefnet-massive")
         is_ai = mode != MODE_WHITE and tool == TOOL_REMOVE_BG
 
@@ -2840,6 +2981,7 @@ class WhiteFloodApp(ctk.CTk):
                             vector_preset,
                             cancel_event=None,
                             status_cb=_batch_status,
+                            processing_profile=processing_profile,
                         )
                         VectorizeService.save(vector_result, dst_path)
                     else:
@@ -2847,6 +2989,7 @@ class WhiteFloodApp(ctk.CTk):
                             src, dst_path, mode, th, fr, es, ag,
                             model_name=internal_model, alpha_matting=am, erode_size=er,
                             tool=tool, scale=scale, status_cb=_batch_status,
+                            processing_profile=processing_profile,
                         )
                     ok += 1
                 except Exception as e:

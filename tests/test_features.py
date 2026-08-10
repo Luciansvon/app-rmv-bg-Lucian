@@ -20,6 +20,14 @@ from features.vectorize.service import (  # noqa: E402
     VectorizeService,
     validate_svg_text,
 )
+from features.performance import (  # noqa: E402
+    PROCESSING_BALANCED,
+    PROCESSING_SLOW,
+    PROCESSING_SUPER_FAST,
+    apply_vector_profile,
+    get_processing_profile,
+    processing_profile_names,
+)
 from features.model_download import ModelSpec, download_model  # noqa: E402
 from features.watermark.inpaint import LamaInpaintService  # noqa: E402
 from features.watermark.mask_canvas import MaskCanvas  # noqa: E402
@@ -33,6 +41,39 @@ from whiteflood_app import format_duration  # noqa: E402
 
 
 class FeatureContractTests(unittest.TestCase):
+    def test_processing_profiles_have_explicit_tradeoffs(self):
+        self.assertEqual(
+            processing_profile_names(),
+            (PROCESSING_SLOW, PROCESSING_BALANCED, PROCESSING_SUPER_FAST),
+        )
+        slow = get_processing_profile(PROCESSING_SLOW)
+        balanced = get_processing_profile(PROCESSING_BALANCED)
+        super_fast = get_processing_profile(PROCESSING_SUPER_FAST)
+        self.assertTrue(slow.requires_confirmation)
+        self.assertFalse(balanced.requires_confirmation)
+        self.assertTrue(super_fast.requires_confirmation)
+        self.assertLess(slow.onnx_threads, super_fast.onnx_threads)
+        self.assertLess(slow.ffmpeg_threads, super_fast.ffmpeg_threads)
+        self.assertGreater(slow.lama_context, super_fast.lama_context)
+        self.assertGreater(slow.lama_overlap, super_fast.lama_overlap)
+
+    def test_vector_speed_profile_changes_expensive_settings(self):
+        base = dict(get_preset("Detailed").config)
+        slow = apply_vector_profile(base, PROCESSING_SLOW)
+        balanced = apply_vector_profile(base, PROCESSING_BALANCED)
+        super_fast = apply_vector_profile(base, PROCESSING_SUPER_FAST)
+        self.assertGreaterEqual(slow["max_iterations"], balanced["max_iterations"])
+        self.assertGreaterEqual(slow["path_precision"], balanced["path_precision"])
+        self.assertLessEqual(
+            super_fast["max_iterations"], balanced["max_iterations"]
+        )
+        self.assertLessEqual(
+            super_fast["path_precision"], balanced["path_precision"]
+        )
+        self.assertGreaterEqual(
+            super_fast["filter_speckle"], balanced["filter_speckle"]
+        )
+
     def test_duration_formatter_uses_hh_mm_ss(self):
         self.assertEqual(format_duration(0), "00:00:00")
         self.assertEqual(format_duration(65), "00:01:05")
@@ -138,7 +179,12 @@ class FeatureContractTests(unittest.TestCase):
         mask = Image.new("L", source.size, 0)
         mask.paste(255, (3, 2, 8, 6))
         progress = []
-        result = service.inpaint(source, mask, progress_cb=lambda done, total: progress.append((done, total)))
+        result = service.inpaint(
+            source,
+            mask,
+            progress_cb=lambda done, total: progress.append((done, total)),
+            processing_profile=PROCESSING_SUPER_FAST,
+        )
         self.assertEqual(result.mode, "RGBA")
         self.assertEqual(result.size, source.size)
         self.assertEqual(progress[-1], (1, 1))
@@ -187,6 +233,13 @@ class FeatureContractTests(unittest.TestCase):
         self.assertNotIn("-shortest", video_only_command)
         self.assertEqual(audio_command[-3:-1], ["-f", "mp4"])
         self.assertTrue(audio_command[-1].endswith(".mp4"))
+
+        super_fast_command = VideoProcessor._build_encoder_command(
+            "ffmpeg.exe", "input.mp4", "output.partial.mp4", info, True,
+            processing_profile=PROCESSING_SUPER_FAST,
+        )
+        thread_index = super_fast_command.index("-threads")
+        self.assertEqual(super_fast_command[thread_index + 1], "4")
 
     def test_video_output_validation_rejects_dimension_drift(self):
         source = MediaInfo(1920, 1080, 30.0, 2.0, 60, False, 0)
