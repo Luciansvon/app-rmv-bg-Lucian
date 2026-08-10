@@ -96,6 +96,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 - Adapter `_ModelDownloadProgress` meneruskan byte download `pooch` ke progress bar dan circular progress UI sehingga persentase serta ukuran model terlihat di aplikasi.
 - Downloader `features/model_download.py` menyimpan LaMa di folder user yang writable; dialog konfirmasi muncul sebelum download pertama.
 - `LoadingSpinner` menjadi circular progress determinate untuk workflow yang memiliki progress dan tetap indeterminate saat engine tidak menyediakan angka kontinu.
+- Timer proses terpusat memakai `time.perf_counter()` dan callback `after()` Tkinter; label `Durasi HH:MM:SS` berhenti pada sukses, error, atau cancel untuk single image, vector, watermark, upscale, dan batch.
 
 ### Single-image workflow
 
@@ -187,9 +188,9 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 Build terakhir yang dicek:
 
 - Command: `BUILD_EXE.bat`.
-- Output: `dist/WhiteFlood_BG_Remover.exe`, 295,687,413 bytes, dibuat 2026-08-10 10:42:39.
+- Output: `dist/WhiteFlood_BG_Remover.exe`, 295,689,770 bytes, dibuat 2026-08-10 11:22:19.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `5CCBAE993165913FBF6E5B618E5D8AB7EC1098C78A16772E8525F3312170F549`.
+- SHA-256: `92CADFB632FACACD8F9828AC08840F2A8A22F7648D96E998053004A64BAB89E8`.
 - Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
 - Hasil runtime EXE belum diuji; warning log berisi 723 baris, termasuk unresolved `tbb12.dll` dari optional dependency numba.

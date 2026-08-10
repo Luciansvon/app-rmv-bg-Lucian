@@ -22,6 +22,7 @@ WhiteFlood provides five independent workbench pages:
 
 - Cached Before/After split-slider preview for smoother dragging.
 - Circular percentage progress is shown for all processing workflows.
+- Live processing duration is shown as `Durasi HH:MM:SS` while a workflow runs and after it completes.
 - Missing AI models ask for confirmation and show downloaded/total size plus percentage inside the app.
 - Single-image and folder batch processing.
 - Batch is available for Remove Background, Upscale, and Vectorize Image. Watermark batch/tracking is deferred.

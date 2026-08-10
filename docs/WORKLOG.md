@@ -259,3 +259,29 @@ Status: Build selesai; runtime EXE belum diverifikasi.
 
 - `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`
 - `review-temp/WhiteFlood_BG_Remover_App/build/`
+
+---
+
+## 2026-08-10 - Timestamp durasi semua workflow
+
+Status: source patch, unit test, dan build EXE selesai; GUI runtime masih pending.
+
+### Perubahan
+
+- Menambahkan timer live `Durasi HH:MM:SS` di status bar.
+- Timer dimulai saat worker proses benar-benar dimulai dan berhenti saat selesai, gagal, atau dibatalkan.
+- Durasi final ditulis ke status Remove Background, Upscale, Vectorize, Remove Watermark Image/Video, dan batch.
+- Menambahkan formatter duration sebagai kontrak unit test.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile ...` lulus.
+- `python -m unittest discover -s tests -v` lulus: 12 test.
+- `git diff --check` lulus; warning hanya normalisasi LF/CRLF Git.
+- Build `BUILD_EXE.bat` lulus dalam sekitar 6 menit 27 detik.
+- EXE: `dist/WhiteFlood_BG_Remover.exe`, 295.689.770 bytes, dibuat 2026-08-10 11:22:19.
+- SHA-256: `92CADFB632FACACD8F9828AC08840F2A8A22F7648D96E998053004A64BAB89E8`.
+
+### Gate pending
+
+- GUI smoke test untuk memastikan label timer terlihat dan berhenti di semua workflow.

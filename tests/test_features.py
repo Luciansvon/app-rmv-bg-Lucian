@@ -29,9 +29,15 @@ from features.watermark.media import (  # noqa: E402
     probe_video,
 )
 from features.watermark.video import VideoProcessor, VideoError  # noqa: E402
+from whiteflood_app import format_duration  # noqa: E402
 
 
 class FeatureContractTests(unittest.TestCase):
+    def test_duration_formatter_uses_hh_mm_ss(self):
+        self.assertEqual(format_duration(0), "00:00:00")
+        self.assertEqual(format_duration(65), "00:01:05")
+        self.assertEqual(format_duration(3661), "01:01:01")
+
     def test_bundled_ffmpeg_tools_are_present_and_runnable(self):
         for name in ("ffmpeg", "ffprobe"):
             binary = bundled_binary(name)

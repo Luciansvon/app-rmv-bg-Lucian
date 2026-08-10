@@ -75,6 +75,14 @@ def format_bytes(value):
         amount /= 1024
     return f"{value} B"
 
+
+def format_duration(seconds):
+    """Format elapsed processing time as a stable HH:MM:SS label."""
+    total = max(0, int(float(seconds or 0)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
 # ── Helper to check if model is already downloaded ──────
 def is_model_downloaded(model_name):
     u2net_dir = Path.home() / ".u2net"
@@ -1008,6 +1016,7 @@ class WhiteFloodApp(ctk.CTk):
         self.preview_state_var = ctk.StringVar(value="SIAP  /  LOKAL")
         self.progress_phase_var = ctk.StringVar(value="Belum ada proses")
         self.progress_percent_var = ctk.StringVar(value="0%")
+        self.elapsed_time_var = ctk.StringVar(value="Durasi --:--:--")
 
         self._src_path = None
         self._original = None
@@ -1023,6 +1032,9 @@ class WhiteFloodApp(ctk.CTk):
         self._video_temp_dir = None
         self._video_source_info = None
         self._closing = False
+        self._process_started_at = None
+        self._process_timer_job = None
+        self._last_process_duration = 0.0
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1590,9 +1602,13 @@ class WhiteFloodApp(ctk.CTk):
             font=ctk.CTkFont(size=10, weight="bold"), text_color=C["text"], anchor="w",
         ).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(
+            progress_meta, textvariable=self.elapsed_time_var,
+            font=ctk.CTkFont(size=10), text_color=C["dim"], anchor="e",
+        ).grid(row=0, column=1, sticky="e", padx=(12, 12))
+        ctk.CTkLabel(
             progress_meta, textvariable=self.progress_percent_var,
             font=ctk.CTkFont(size=10, weight="bold"), text_color=C["accent"], anchor="e",
-        ).grid(row=0, column=1, sticky="e")
+        ).grid(row=0, column=2, sticky="e")
 
         self.progress = ctk.CTkProgressBar(
             status_bar, fg_color=C["border"], progress_color=C["accent"],
@@ -1674,6 +1690,41 @@ class WhiteFloodApp(ctk.CTk):
         else:
             self.lbl_refine.pack(anchor="w", pady=(8, 4))
             self.refine_dropdown.pack(fill="x", pady=(0, 8))
+
+    def _start_process_timer(self):
+        self._stop_process_timer(update_label=False)
+        self._process_started_at = time.perf_counter()
+        self._last_process_duration = 0.0
+        self.elapsed_time_var.set("Durasi 00:00:00")
+        self._tick_process_timer()
+
+    def _tick_process_timer(self):
+        if self._process_started_at is None:
+            return
+        elapsed = time.perf_counter() - self._process_started_at
+        self.elapsed_time_var.set(f"Durasi {format_duration(elapsed)}")
+        self._process_timer_job = self.after(250, self._tick_process_timer)
+
+    def _stop_process_timer(self, update_label=True):
+        if self._process_timer_job is not None:
+            try:
+                self.after_cancel(self._process_timer_job)
+            except Exception:
+                pass
+            self._process_timer_job = None
+        if self._process_started_at is None:
+            elapsed = self._last_process_duration
+        else:
+            elapsed = max(0.0, time.perf_counter() - self._process_started_at)
+        self._process_started_at = None
+        self._last_process_duration = elapsed
+        if update_label:
+            self.elapsed_time_var.set(f"Durasi {format_duration(elapsed)}")
+        return elapsed
+
+    @staticmethod
+    def _duration_text(seconds):
+        return f"Durasi {format_duration(seconds)}"
 
     def _get_refinement_params(self):
         r = self.refine_var.get()
@@ -2212,6 +2263,7 @@ class WhiteFloodApp(ctk.CTk):
         if self._processing or self._original is None or self._src_path is None:
             return
         self._processing = True
+        self._start_process_timer()
         self._cancel_event.clear()
         self._result = None
         self._vector_result = None
@@ -2243,6 +2295,7 @@ class WhiteFloodApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_vector_ok(self, result):
+        elapsed = self._stop_process_timer()
         self.spinner.set_progress(100)
         self._hide_processing_overlay()
         self._processing = False
@@ -2256,7 +2309,8 @@ class WhiteFloodApp(ctk.CTk):
         self._show_active_surface()
         self._update_button_states()
         self.status_text.set(
-            f"SVG valid: {result.byte_length:,} byte | preset {result.preset}. Klik 'Simpan SVG'."
+            f"SVG valid: {result.byte_length:,} byte | preset {result.preset}. "
+            f"{self._duration_text(elapsed)}. Klik 'Simpan SVG'."
         )
 
     def _on_video_progress(self, completed, total):
@@ -2318,6 +2372,7 @@ class WhiteFloodApp(ctk.CTk):
         self._show_active_surface()
         self._update_button_states()
         self._show_processing_overlay("Menghapus watermark...", percent=0)
+        self._start_process_timer()
         self.progress_phase_var.set("Remove Watermark")
         self.progress_percent_var.set("0%")
         self.progress.set(0.01)
@@ -2370,6 +2425,7 @@ class WhiteFloodApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_watermark_ok(self, result, kind):
+        elapsed = self._stop_process_timer()
         self.spinner.set_progress(100)
         self._hide_processing_overlay()
         self._processing = False
@@ -2382,14 +2438,16 @@ class WhiteFloodApp(ctk.CTk):
             self.status_text.set(
                 f"Video selesai: {output_info.width}x{output_info.height}, "
                 f"{output_info.fps:.3g} FPS, {output_info.duration:.1f} detik. "
-                f"Audio {'disalin' if result.audio_copied else 'tidak disalin'}.{warning} Klik 'Simpan Hasil'."
+                f"Audio {'disalin' if result.audio_copied else 'tidak disalin'}. "
+                f"{self._duration_text(elapsed)}.{warning} Klik 'Simpan Hasil'."
             )
         else:
             self._result = result
             self._video_result = None
             self.preview_state_var.set("SELESAI  /  REMOVE WATERMARK IMAGE")
             self.status_text.set(
-                f"PNG siap: {result.width}x{result.height} px, mode {result.mode}. Klik 'Simpan Hasil'."
+                f"PNG siap: {result.width}x{result.height} px, mode {result.mode}. "
+                f"{self._duration_text(elapsed)}. Klik 'Simpan Hasil'."
             )
         self.progress.set(1.0)
         self.progress_phase_var.set("Selesai")
@@ -2399,6 +2457,7 @@ class WhiteFloodApp(ctk.CTk):
         self._update_button_states()
 
     def _on_feature_err(self, error, tool):
+        elapsed = self._stop_process_timer()
         self._hide_processing_overlay()
         self._processing = False
         if tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO:
@@ -2413,7 +2472,7 @@ class WhiteFloodApp(ctk.CTk):
             self.preview_canvas.set_images(self._original, None)
             self._show_active_surface()
         self._update_button_states()
-        self.status_text.set(f"Gagal memproses: {error}")
+        self.status_text.set(f"Gagal memproses ({self._duration_text(elapsed)}): {error}")
         if "dibatalkan" not in error.lower():
             messagebox.showerror(APP_NAME, f"Gagal memproses:\n\n{error}")
 
@@ -2455,6 +2514,7 @@ class WhiteFloodApp(ctk.CTk):
                 self.progress.set(0)
                 return
 
+        self._start_process_timer()
         if tool == TOOL_UPSCALE:
             self._show_processing_overlay(f"Memperbesar foto ({scale}x)...", percent=0)
             self.status_text.set(f"Memperbesar foto ({scale}x)... [RAM: {get_process_memory_mb()} MB]")
@@ -2504,6 +2564,7 @@ class WhiteFloodApp(ctk.CTk):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _on_process_ok(self):
+        elapsed = self._stop_process_timer()
         self.spinner.set_progress(100)
         self._hide_processing_overlay()
 
@@ -2527,15 +2588,16 @@ class WhiteFloodApp(ctk.CTk):
         if self.active_tool == TOOL_UPSCALE:
             self.status_text.set(
                 f"[Upscale {self.scale_var.get()}x] Selesai: {orig_sz[0]}x{orig_sz[1]} -> {res_sz[0]}x{res_sz[1]} px. "
-                f"[RAM: {ram_mb} MB] -> Klik 'Simpan Hasil'."
+                f"{self._duration_text(elapsed)}. [RAM: {ram_mb} MB] -> Klik 'Simpan Hasil'."
             )
         else:
             self.status_text.set(
                 f"[{self.mode_var.get()}] Selesai: {res_sz[0]}x{res_sz[1]} px. "
-                f"[RAM: {ram_mb} MB] -> Klik 'Simpan Hasil'."
+                f"{self._duration_text(elapsed)}. [RAM: {ram_mb} MB] -> Klik 'Simpan Hasil'."
             )
 
     def _on_process_err(self, err):
+        elapsed = self._stop_process_timer()
         self._hide_processing_overlay()
 
         self._processing = False
@@ -2550,7 +2612,7 @@ class WhiteFloodApp(ctk.CTk):
             self.preview_canvas.set_images(self._original, None)
 
         self._update_button_states()
-        self.status_text.set(f"Gagal memproses: {err}")
+        self.status_text.set(f"Gagal memproses gambar ({self._duration_text(elapsed)}): {err}")
         messagebox.showerror(APP_NAME, f"Gagal memproses gambar:\n\n{err}")
 
     def save_result(self):
@@ -2744,6 +2806,7 @@ class WhiteFloodApp(ctk.CTk):
 
         total = len(files)
         self._processing = True
+        self._start_process_timer()
         self._batch_cancelled = False
         self._cancel_event.clear()
         self._update_button_states()
@@ -2803,6 +2866,7 @@ class WhiteFloodApp(ctk.CTk):
         self.progress_percent_var.set(f"{int((idx / total) * 100)}%")
 
     def _batch_done(self, ok, total, errors, cancelled=False):
+        elapsed = self._stop_process_timer()
         if self._closing:
             self._hide_processing_overlay()
             self._processing = False
@@ -2819,12 +2883,18 @@ class WhiteFloodApp(ctk.CTk):
         ram_mb = get_process_memory_mb()
         if cancelled:
             self.progress_phase_var.set("Batch dibatalkan")
-            msg = f"Batch dibatalkan. {ok} dari {total} gambar selesai diproses. [RAM: {ram_mb} MB]"
+            msg = (
+                f"Batch dibatalkan. {ok} dari {total} gambar selesai diproses. "
+                f"{self._duration_text(elapsed)}. [RAM: {ram_mb} MB]"
+            )
             self.status_text.set(msg)
             messagebox.showinfo(APP_NAME, msg)
         elif errors:
             self.progress_phase_var.set("Batch selesai dengan error")
-            self.status_text.set(f"Selesai {ok}/{total}. Ada {len(errors)} error. [RAM: {ram_mb} MB]")
+            self.status_text.set(
+                f"Selesai {ok}/{total}. Ada {len(errors)} error. "
+                f"{self._duration_text(elapsed)}. [RAM: {ram_mb} MB]"
+            )
             messagebox.showwarning(
                 APP_NAME,
                 f"Selesai: {ok}/{total} file.\nAda error pada {len(errors)} file:\n\n"
@@ -2832,7 +2902,10 @@ class WhiteFloodApp(ctk.CTk):
             )
         else:
             self.progress_phase_var.set("Batch selesai")
-            self.status_text.set(f"Selesai: {ok} file diproses. [RAM: {ram_mb} MB]")
+            self.status_text.set(
+                f"Selesai: {ok} file diproses. {self._duration_text(elapsed)}. "
+                f"[RAM: {ram_mb} MB]"
+            )
             messagebox.showinfo(
                 APP_NAME,
                 f"Selesai memproses {ok} file!\n\n"

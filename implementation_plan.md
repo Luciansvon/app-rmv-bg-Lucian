@@ -172,3 +172,23 @@ Status: Source implementation dan build EXE selesai; GUI runtime gate pending.
 
 - Download model nyata, GUI confirmation/progress, click Process Watermark, dan screenshot smoke test.
 - Runtime EXE, FFmpeg video pipeline, serta visual icon pada Windows.
+
+## 2026-08-10 - Timestamp durasi semua workflow
+
+Status: Source implementation, unit test, dan build EXE selesai; GUI runtime gate pending.
+
+### Perubahan
+
+- Menambahkan timer terpusat berbasis `time.perf_counter()` dan callback `after()` Tkinter.
+- Menampilkan `Durasi HH:MM:SS` secara live di status bar.
+- Menyimpan durasi final untuk Remove Background, Upscale, Vectorize, Remove Watermark Image/Video, dan batch pada status hasil/error/cancel.
+
+### Gate aktual
+
+- Syntax check lulus.
+- Unit test lulus dengan 12 test.
+- `BUILD_EXE.bat` lulus dalam sekitar 6 menit 27 detik; EXE baru tersedia di `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`.
+
+### Gate pending
+
+- GUI smoke test visual.
