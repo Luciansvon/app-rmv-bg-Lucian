@@ -217,6 +217,14 @@ Status: source implementation, unit test, dan build EXE selesai; GUI runtime gat
 
 ### Bukti build
 
-- `BUILD_EXE.bat` lulus dalam sekitar 5 menit 56 detik.
-- EXE: `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`, 295.693.085 bytes, dibuat 2026-08-10 11:48:36.
-- SHA-256: `BBB932670E8AB633DDC18E8D872233D93D407674E02100479FF5C98E802EFF77`.
+- Build release PyInstaller dengan konfigurasi setara `BUILD_EXE.bat` lulus dalam sekitar 3 menit 48 detik; output dibuat di staging temporary karena EXE pada `dist/` sedang dipakai.
+- EXE release: `WhiteFlood_BG_Remover.exe`, 295.694.770 bytes, dibuat 2026-08-10 12:06:54.
+- SHA-256: `C97C1E3C152FB9F9F0B9A74BBDB0B14E3885F3EFFBDF25784554A7319E231B85`.
+
+## 2026-08-10 - Release v2.6.0
+
+Status: release publik dan asset EXE selesai; link download README sudah diarahkan ke release baru.
+
+- Release: https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.0
+- Asset: `WhiteFlood_BG_Remover.exe`, digest GitHub cocok dengan SHA-256 build.
+- GUI smoke test khusus selector speed tetap tercatat sebagai pemeriksaan lanjutan.

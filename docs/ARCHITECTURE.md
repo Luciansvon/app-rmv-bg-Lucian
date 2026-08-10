@@ -194,12 +194,13 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 - Folder `assets/` dan `ffmpeg/` menjadi resource path development/`_MEIPASS`; LaMa dapat diunduh ke folder user writable, sedangkan `ffmpeg.exe`, `ffprobe.exe`, license, dan checksum sudah disertakan untuk build distribusi. Binary `.exe` ditrack dengan Git LFS.
 - Script build bersifat destruktif terhadap `build/`, `dist/`, dan file `.spec`; target harus diperiksa sebelum dijalankan.
 
-Build terakhir yang dicek:
+Build release terakhir yang dicek:
 
-- Command: `BUILD_EXE.bat`.
-- Output: `dist/WhiteFlood_BG_Remover.exe`, 295,693,085 bytes, dibuat 2026-08-10 11:48:36.
+- Command: PyInstaller dengan konfigurasi setara `BUILD_EXE.bat`; staging temporary dipakai karena EXE pada `dist/` sedang berjalan.
+- Output: `WhiteFlood_BG_Remover.exe` pada asset release `v2.6.0`, 295,694,770 bytes, dibuat 2026-08-10 12:06:54.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `BBB932670E8AB633DDC18E8D872233D93D407674E02100479FF5C98E802EFF77`.
+- SHA-256: `C97C1E3C152FB9F9F0B9A74BBDB0B14E3885F3EFFBDF25784554A7319E231B85`.
+- Release URL: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.0`.
 - Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
 - Hasil runtime EXE belum diuji; warning log berisi 723 baris, termasuk unresolved `tbb12.dll` dari optional dependency numba.

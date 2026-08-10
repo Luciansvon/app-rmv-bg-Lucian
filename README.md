@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.5.0"><img src="https://img.shields.io/github/v/release/Luciansvon/app-rmv-bg-Lucian?label=latest%20release" alt="Latest release"></a>
+  <a href="https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.0"><img src="https://img.shields.io/github/v/release/Luciansvon/app-rmv-bg-Lucian?label=latest%20release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="Windows">
   <img src="https://img.shields.io/badge/processing-local%20first-2E8B57" alt="Local-first processing">
 </p>
@@ -63,7 +63,7 @@ WhiteFlood is a local-first desktop workbench for furniture/catalog media. It ke
 
 For the easiest setup, download the Windows executable from the latest release:
 
-**[Download WhiteFlood v2.5.0](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.5.0/WhiteFlood_BG_Remover.exe)**
+**[Download WhiteFlood v2.6.0](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.6.0/WhiteFlood_BG_Remover.exe)**
 
 The release asset is a one-file, windowed build. Python is not required for the release executable. On first use, missing AI models are confirmed and downloaded to the user model folder with progress shown inside the app. Vectorize uses the bundled VTracer package and does not download an AI model.
 
