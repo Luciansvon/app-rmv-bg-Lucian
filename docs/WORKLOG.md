@@ -351,3 +351,26 @@ Status: source patch dan static/unit verification selesai; GUI minimize serta do
 
 - GUI smoke test: mulai download model, minimize window, pantau file `.part`, lalu pastikan file model final tersedia.
 - Download internet nyata dan runtime EXE belum dijalankan.
+
+---
+
+## 2026-08-10 - Progress Remove Background tidak lagi palsu di 70%
+
+Status: source patch dan static/unit verification selesai; GUI dengan model nyata masih pending.
+
+### Perubahan
+
+- Menghapus event numerik 70% sebelum inferensi `rembg_remove()`.
+- Menampilkan fase indeterminate dengan pesan bahwa AI lokal sedang menghitung mask objek.
+- Mengembalikan horizontal progress bar ke mode determinate saat progress numerik kembali tersedia.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile .\\review-temp\\WhiteFlood_BG_Remover_App\\whiteflood_app.py` lulus.
+- `python -m unittest discover -s tests -v` lulus dengan 17 test.
+- `git diff --check` lulus; warning hanya normalisasi LF/CRLF Git.
+
+### Gate pending
+
+- GUI smoke test Hapus Background dengan model lokal nyata untuk memastikan animasi indeterminate,
+  hasil 100%, dan durasi selesai terlihat pada EXE/runtime.

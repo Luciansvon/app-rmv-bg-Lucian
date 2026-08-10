@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import types
 import unittest
 from unittest import mock
 
@@ -38,7 +39,13 @@ from features.watermark.media import (  # noqa: E402
     probe_video,
 )
 from features.watermark.video import VideoProcessor, VideoError  # noqa: E402
-from whiteflood_app import _UiEventQueue, format_duration  # noqa: E402
+import whiteflood_app as app_module  # noqa: E402
+from whiteflood_app import (  # noqa: E402
+    REMOVE_BG_INFERENCE_PHASE,
+    WhiteFloodApp,
+    _UiEventQueue,
+    format_duration,
+)
 
 
 class FeatureContractTests(unittest.TestCase):
@@ -93,6 +100,60 @@ class FeatureContractTests(unittest.TestCase):
         for callback in bridge.drain():
             callback()
         self.assertEqual(events, ["download"])
+
+    def test_remove_background_marks_inference_indeterminate_before_engine(self):
+        events = []
+        source = Image.new("RGB", (2, 2), (20, 30, 40))
+        expected = Image.new("RGBA", source.size, (20, 30, 40, 255))
+
+        def fake_remove(*_args, **_kwargs):
+            self.assertEqual(
+                events[-1],
+                {"kind": "phase_indeterminate", "message": REMOVE_BG_INFERENCE_PHASE},
+            )
+            return expected
+
+        fake_rembg = types.ModuleType("rembg")
+        fake_rembg.remove = fake_remove
+        with mock.patch.object(app_module, "REMBG_OK", True), \
+                mock.patch.object(app_module, "_get_rembg_session", return_value=object()), \
+                mock.patch.dict(sys.modules, {"rembg": fake_rembg}):
+            result = app_module.ai_remove_bg(source, status_cb=events.append)
+
+        self.assertEqual(result.size, source.size)
+        self.assertEqual(events[1]["kind"], "phase_indeterminate")
+        self.assertEqual(events[-1], 100.0)
+
+    def test_progress_mode_switches_back_after_indeterminate_phase(self):
+        class FakeProgress:
+            def __init__(self):
+                self.events = []
+
+            def configure(self, **kwargs):
+                self.events.append(("configure", kwargs["mode"]))
+
+            def start(self):
+                self.events.append("start")
+
+            def stop(self):
+                self.events.append("stop")
+
+        app = object.__new__(WhiteFloodApp)
+        app.progress = FakeProgress()
+        app._progress_mode = "determinate"
+
+        app._set_progress_mode("indeterminate")
+        app._set_progress_mode("determinate")
+
+        self.assertEqual(
+            app.progress.events,
+            [
+                ("configure", "indeterminate"),
+                "start",
+                "stop",
+                ("configure", "determinate"),
+            ],
+        )
 
     def test_bundled_ffmpeg_tools_are_present_and_runnable(self):
         for name in ("ffmpeg", "ffprobe"):
