@@ -2,7 +2,7 @@
   <img src="review-temp/WhiteFlood_BG_Remover_App/logo.png" alt="WhiteFlood logo" width="180">
 </p>
 
-<h1 align="center">WhiteFlood BG Remover &amp; Upscaler</h1>
+<h1 align="center">WhiteFlood — Local Image &amp; Video Toolkit</h1>
 
 <p align="center">
   A local-first Windows desktop tool for furniture product photography and office catalogs.
@@ -61,7 +61,7 @@ WhiteFlood is a local-first desktop workbench for furniture/catalog media. It ke
 
 For the easiest setup, download the Windows executable from the latest release:
 
-**[Download WhiteFlood BG Remover v2.5.0](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.5.0/WhiteFlood_BG_Remover.exe)**
+**[Download WhiteFlood v2.5.0](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.5.0/WhiteFlood_BG_Remover.exe)**
 
 The release asset is a one-file, windowed build. Python is not required for the release executable. On first use, missing AI models are confirmed and downloaded to the user model folder with progress shown inside the app. Vectorize uses the bundled VTracer package and does not download an AI model.
 
@@ -106,7 +106,7 @@ The build uses PyInstaller `--onefile --windowed` and writes the executable to `
 - Images stay on the local computer during processing.
 - The first use of an AI background-removal or watermark mode may require an internet connection to download its model after user confirmation.
 - Downloaded LaMa is stored under `%LOCALAPPDATA%\\WhiteFlood\\models`; image processing remains local after download.
-- Watermark video release packaging still needs pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/`.
+- Watermark video release packaging includes pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/` (BtbN `autobuild-2026-08-09-13-03`, FFmpeg 8.1.2).
 - Upscale 8x and large source images require more RAM, GPU resources, and disk space.
 - The bundled release was built on Windows; GPU/Vulkan support can vary by computer.
 

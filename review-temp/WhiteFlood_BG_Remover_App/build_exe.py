@@ -3,6 +3,21 @@ import sys
 import subprocess
 import shutil
 
+
+ffmpeg_dir = os.path.join(os.path.dirname(__file__), "ffmpeg")
+required_ffmpeg_files = ("ffmpeg.exe", "ffprobe.exe")
+missing_ffmpeg_files = [
+    name for name in required_ffmpeg_files
+    if not os.path.isfile(os.path.join(ffmpeg_dir, name))
+]
+if missing_ffmpeg_files:
+    print(
+        "[ERROR] Binary FFmpeg wajib ada sebelum build: "
+        + ", ".join(missing_ffmpeg_files)
+    )
+    print(f"[ERROR] Folder yang diperiksa: {os.path.abspath(ffmpeg_dir)}")
+    sys.exit(1)
+
 # Ensure onnxruntime capi directory is in PATH for PyInstaller isolated subprocesses
 try:
     import onnxruntime

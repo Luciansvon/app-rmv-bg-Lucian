@@ -91,7 +91,7 @@ Status: source patch dan build EXE selesai; GUI runtime masih pending.
 
 - Dialog konfirmasi dan download model internet nyata.
 - GUI click Process Watermark, circular progress visual, logo Windows, serta smoke test Remove Background/Upscale/Vectorize/Watermark.
-- FFmpeg bundle dan model LaMa masih belum tersedia di repository; LaMa akan diunduh ke folder user saat disetujui.
+- Model LaMa akan diunduh ke folder user saat disetujui. Binary FFmpeg bundle ditambahkan pada gate berikutnya dan dicatat di bawah.
 
 ### File utama
 
@@ -100,6 +100,36 @@ Status: source patch dan build EXE selesai; GUI runtime masih pending.
 - `review-temp/WhiteFlood_BG_Remover_App/features/watermark/mask_canvas.py`
 - `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
 - `tests/test_features.py`
+
+---
+
+## 2026-08-10 - Membundel FFmpeg untuk Watermark Video
+
+Status: binary source, preflight build, dan build EXE selesai; runtime GUI masih pending.
+
+### Perubahan
+
+- Menambahkan `ffmpeg.exe`, `ffprobe.exe`, `LICENSE.txt`, dan `checksums.sha256` ke folder source `ffmpeg/`.
+- Mem-pin BtbN `autobuild-2026-08-09-13-03`, asset FFmpeg 8.1.2 LGPL Windows x64.
+- Menambahkan preflight `build_exe.py` agar build berhenti dengan pesan jelas jika binary video hilang.
+- Menambahkan unit test yang menjalankan `ffmpeg.exe -version` dan `ffprobe.exe -version`.
+
+### Bukti verifikasi aktual
+
+- Archive 139.1 MB terunduh dari release pin dan checksum archive cocok.
+- `ffmpeg.exe -hide_banner -version` exit code 0.
+- `ffprobe.exe -hide_banner -version` exit code 0.
+- Hash binary dicatat di `review-temp/WhiteFlood_BG_Remover_App/ffmpeg/checksums.sha256`.
+- `python -m unittest discover -s tests -v` lulus: 11 test.
+- Build `BUILD_EXE.bat` lulus dalam sekitar 4 menit 30 detik.
+- EXE: `dist/WhiteFlood_BG_Remover.exe`, 295.687.413 bytes, dibuat 2026-08-10 10:42:39.
+- SHA-256: `5CCBAE993165913FBF6E5B618E5D8AB7EC1098C78A16772E8525F3312170F549`.
+- PyInstaller TOC mencatat `ffmpeg/ffmpeg.exe` dan `ffmpeg/ffprobe.exe` masuk ke package.
+- Binary `.exe` disiapkan untuk tracking Git LFS karena masing-masing berukuran lebih dari 100 MB.
+
+### Gate pending
+
+- Smoke test video dengan fixture nyata.
 
 ---
 

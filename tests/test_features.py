@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -22,11 +23,28 @@ from features.vectorize.service import (  # noqa: E402
 from features.model_download import ModelSpec, download_model  # noqa: E402
 from features.watermark.inpaint import LamaInpaintService  # noqa: E402
 from features.watermark.mask_canvas import MaskCanvas  # noqa: E402
-from features.watermark.media import MediaInfo, probe_video  # noqa: E402
+from features.watermark.media import (  # noqa: E402
+    MediaInfo,
+    bundled_binary,
+    probe_video,
+)
 from features.watermark.video import VideoProcessor, VideoError  # noqa: E402
 
 
 class FeatureContractTests(unittest.TestCase):
+    def test_bundled_ffmpeg_tools_are_present_and_runnable(self):
+        for name in ("ffmpeg", "ffprobe"):
+            binary = bundled_binary(name)
+            self.assertTrue(binary.is_file(), binary)
+            completed = subprocess.run(
+                [str(binary), "-hide_banner", "-version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn(b"FFmpeg", completed.stdout + completed.stderr)
+
     def test_vector_presets_use_supported_vtracer_ranges(self):
         for name in ("Logo", "Illustration", "Line Art", "Detailed"):
             preset = get_preset(name)

@@ -243,7 +243,7 @@ Unittest kontrak memeriksa callback mask. GUI click test belum dijalankan.
 ### Bukti verifikasi aktual
 
 - `python -m py_compile ...` lulus.
-- `python -m unittest discover -s tests -v` lulus dengan 9 test.
+- `python -m unittest discover -s tests -v` lulus dengan 11 test.
 
 ### Batasan
 
@@ -284,7 +284,7 @@ Unittest fake downloader memeriksa progress byte, instalasi atomic, dan cleanup 
 ### Bukti verifikasi aktual
 
 - `python -m py_compile ...` lulus.
-- `python -m unittest discover -s tests -v` lulus dengan 9 test.
+- `python -m unittest discover -s tests -v` lulus dengan 11 test.
 - Download internet nyata, inferensi LaMa, dan GUI belum dijalankan.
 
 ### Batasan
@@ -296,6 +296,41 @@ Model baru akan diunduh saat user menyetujui dialog di EXE baru. Model tidak diu
 - `review-temp/WhiteFlood_BG_Remover_App/features/model_download.py`
 - `review-temp/WhiteFlood_BG_Remover_App/features/watermark/inpaint.py`
 - `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+
+## ERR-007 - FFprobe tidak tersedia di EXE Watermark Video
+
+Tanggal: 2026-08-10
+Versi: 2.5.0
+Area: Remove Watermark Video | Packaging
+Status: Diperbaiki
+
+### Gejala
+
+Saat user memilih video dari EXE, aplikasi menampilkan `ffprobe.exe belum tersedia di bundle WhiteFlood`.
+
+### Root cause
+
+Folder `ffmpeg/` hanya berisi README dan notice, tetapi source video dan PyInstaller sudah mengharapkan `ffmpeg.exe` serta `ffprobe.exe` di folder resource tersebut.
+
+### Solusi
+
+- Menambahkan binary Windows x64 LGPL yang dipin ke folder `ffmpeg/`.
+- Menambahkan `LICENSE.txt`, checksum binary, dan metadata release.
+- Menambahkan preflight build agar EXE tidak bisa dibuat ketika binary wajib hilang.
+- Menambahkan unit test yang menjalankan kedua binary dengan `-version`.
+
+### Bukti verifikasi aktual
+
+- Archive BtbN release pin terverifikasi dengan SHA-256.
+- `ffmpeg.exe -version` dan `ffprobe.exe -version` exit code 0.
+- `python -m unittest discover -s tests -v` lulus dengan 11 test.
+- Build `BUILD_EXE.bat` lulus; TOC PyInstaller mencatat kedua binary FFmpeg di dalam package.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/ffmpeg/`
+- `review-temp/WhiteFlood_BG_Remover_App/build_exe.py`
+- `tests/test_features.py`
 - `tests/test_features.py`
 
 ## ERR-006 - Logo window tampak terlalu kecil

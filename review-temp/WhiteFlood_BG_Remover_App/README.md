@@ -2,7 +2,7 @@
   <img src="logo.png" alt="WhiteFlood logo" width="160">
 </p>
 
-<h1 align="center">WhiteFlood BG Remover &amp; Upscaler</h1>
+<h1 align="center">WhiteFlood — Local Image &amp; Video Toolkit</h1>
 
 <p align="center">Windows desktop processing tools for furniture product photos and catalogs.</p>
 
@@ -74,7 +74,7 @@ PNG, JPG, JPEG, WEBP, and BMP.
 
 The first AI background-removal or watermark run may need an internet connection to download a model after confirmation. Downloaded LaMa is stored under `%LOCALAPPDATA%\\WhiteFlood\\models`; image processing remains local. Vectorize uses VTracer and does not download an AI model.
 
-Watermark video release packaging still needs pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/`. If LaMa is not bundled, the app downloads the OpenCV Zoo model after user confirmation.
+Watermark video release packaging includes pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/` (BtbN `autobuild-2026-08-09-13-03`, FFmpeg 8.1.2). If LaMa is not bundled, the app downloads the OpenCV Zoo model after user confirmation.
 
 ---
 

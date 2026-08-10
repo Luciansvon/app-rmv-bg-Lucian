@@ -181,16 +181,17 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 - `build_exe.py` membuat executable one-file windowed bernama `WhiteFlood_BG_Remover.exe`.
 - `RUN_APP.vbs` memilih EXE di `dist` bila tersedia; jika belum ada, launcher memakai `pythonw.exe` untuk source agar console tidak muncul.
 - Aset logo, folder `realesrgan`, metadata package, dan dependency runtime dikumpulkan ke bundle.
-- Folder `assets/` dan `ffmpeg/` sudah disiapkan sebagai resource path development/`_MEIPASS`; LaMa dapat diunduh ke folder user writable, sedangkan binary FFmpeg belum disertakan.
+- Folder `assets/` dan `ffmpeg/` menjadi resource path development/`_MEIPASS`; LaMa dapat diunduh ke folder user writable, sedangkan `ffmpeg.exe`, `ffprobe.exe`, license, dan checksum sudah disertakan untuk build distribusi. Binary `.exe` ditrack dengan Git LFS.
 - Script build bersifat destruktif terhadap `build/`, `dist/`, dan file `.spec`; target harus diperiksa sebelum dijalankan.
 
 Build terakhir yang dicek:
 
 - Command: `BUILD_EXE.bat`.
-- Output: `dist/WhiteFlood_BG_Remover.exe`, 201,375,415 bytes, dibuat 2026-08-10 10:12:51.
+- Output: `dist/WhiteFlood_BG_Remover.exe`, 295,687,413 bytes, dibuat 2026-08-10 10:42:39.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `1E761624C5E6076ACDD5A3D10A305E2C575CCAB1470B91302E5D1CD4F1E91E5A`.
+- SHA-256: `5CCBAE993165913FBF6E5B618E5D8AB7EC1098C78A16772E8525F3312170F549`.
 - Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
+- `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
 - Hasil runtime EXE belum diuji; warning log berisi 723 baris, termasuk unresolved `tbb12.dll` dari optional dependency numba.
 
 ## Aturan arsitektur yang dikunci
