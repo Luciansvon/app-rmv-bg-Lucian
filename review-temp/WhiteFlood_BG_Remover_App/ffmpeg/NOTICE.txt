@@ -1,0 +1,4 @@
+FFmpeg binaries are not included in this source snapshot.
+
+Before distribution, add a pinned Windows x64 LGPL build, its checksum, and the
+corresponding FFmpeg license notices in this folder.

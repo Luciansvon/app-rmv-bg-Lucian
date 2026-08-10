@@ -17,12 +17,23 @@ Perubahan patch 2026-08-08 sudah diperiksa melalui syntax check dan static smoke
 
 Jangan mengubah status menjadi "terverifikasi" hanya karena fungsi atau komentar sudah ada di source.
 
+Status implementasi fitur 2026-08-10:
+
+- visual baseline enam page dari `docs/WHITEFLOOD_UI_REDESIGN.md` sudah diterapkan ke source aktif;
+- source resmi VTracer tag `0.6.15`, OpenCV Zoo LaMa, dan dokumentasi FFmpeg sudah diaudit sebagai acuan adapter;
+- service Vectorize, mask, LaMa, media, dan video streaming sudah ditambahkan;
+- unittest kontrak service sudah ditambahkan dan lulus;
+- GUI smoke test, VTracer runtime, model LaMa, binary FFmpeg, dan build EXE untuk patch ini belum dijalankan.
+
 ## Tujuan dan batas sistem
 
-WhiteFlood adalah aplikasi desktop Windows lokal untuk foto produk furnitur dan katalog kantor. Aplikasi memiliki dua alat yang dipilih user secara terpisah:
+WhiteFlood adalah aplikasi desktop Windows lokal untuk foto produk furnitur dan katalog kantor. Workspace sekarang memiliki lima workflow yang dipilih user secara terpisah:
 
 1. Remove Background;
 2. Upscale 2x, 4x, atau 8x.
+3. Vectorize Image ke SVG;
+4. Remove Watermark Image;
+5. Remove Watermark Static Video.
 
 Operasional dasar tidak memakai server aplikasi. Model AI dapat perlu diunduh pada penggunaan pertama, tetapi gambar diproses di komputer user dan hasil disimpan sebagai PNG ke path yang dipilih user.
 
@@ -35,11 +46,19 @@ flowchart TD
     S --> W{"Alat aktif"}
     W --> BG["Remove Background"]
     W --> UP["Upscale 2x / 4x / 8x"]
+    W --> VX["Vectorize Image"]
+    W --> WM["Remove Watermark"]
     BG --> AI["rembg + ONNX atau White Background"]
     UP --> NCNN["realesrgan-ncnn-vulkan.exe"]
+    VX --> VT["VTracer 0.6.15"]
+    WM --> MC["MaskCanvas source-pixel"]
+    MC --> LAMA["LaMa ONNX + ONNX Runtime"]
+    WM --> VP["VideoProcessor + bundled FFmpeg"]
     AI --> OUT["PNG output"]
     NCNN --> OUT
-    OUT --> V["Verifikasi ukuran tersimpan"]
+    VT --> SVG["Validated SVG"]
+    LAMA --> OUT
+    VP --> VIDEO["Validated MP4"]
 ```
 
 ## Struktur source aktif
@@ -53,10 +72,15 @@ review-temp/WhiteFlood_BG_Remover_App/
 |-- BUILD_EXE.bat            # install/build dengan PyInstaller
 |-- build_exe.py             # konfigurasi command PyInstaller
 |-- logo.ico, logo.png       # aset branding
+|-- features/
+|   |-- vectorize/            # preset dan adapter VTracer
+|   `-- watermark/            # mask, LaMa, media, dan video pipeline
+|-- assets/models/            # lokasi model LaMa; model tidak dikomit
+|-- ffmpeg/                   # lokasi binary FFmpeg LGPL yang dipin
 `-- realesrgan/               # executable, DLL, dan model backend upscale
 ```
 
-Saat ini source aplikasi masih terpusat pada satu file Python. Jangan memecahnya menjadi banyak module hanya untuk merapikan struktur; pemisahan baru perlu requirement dan verifikasi behavior yang jelas.
+`whiteflood_app.py` tetap menjadi penghubung UI/state/callback. Core feature yang perlu lifecycle, validasi, atau subprocess dipisahkan ke `features/` supaya tidak memperbesar file UI dan lebih mudah diuji tanpa membuka GUI.
 
 ## Lapisan dan tanggung jawab
 
@@ -64,19 +88,19 @@ Saat ini source aplikasi masih terpusat pada satu file Python. Jangan memecahnya
 
 - `WhiteFloodApp` mengelola window, sidebar, pilihan alat, pilihan mode, progress, status, preview, dan dialog file.
 - `SplitSliderPreview` menampilkan gambar asli dan hasil sebelum/sesudah. Bitmap display dan checkerboard di-cache berdasarkan ukuran canvas; drag hanya menjadwalkan satu redraw ringan setiap frame.
-- `active_tool` membedakan `TOOL_REMOVE_BG` dan `TOOL_UPSCALE`.
+- `active_tool` membedakan Workspace, Remove Background, Upscale, Vectorize, serta mode Watermark Image/Video.
 - Tombol proses, simpan, dan batch dikunci melalui state `_processing` agar proses ganda tidak berjalan bersamaan.
 - Adapter `_ModelDownloadProgress` meneruskan byte download `pooch` ke progress bar UI sehingga persentase model terlihat di aplikasi.
 
 ### Single-image workflow
 
-1. User memilih file gambar.
+1. User memilih alat lalu memilih file.
 2. `PIL.Image.open` membaca gambar dan mempertahankan informasi alpha jika tersedia.
-3. Gambar asli langsung ditampilkan sebelum proses berat dimulai.
-4. Remove Background diproses dengan mode yang dipilih, atau Upscale diproses setelah user memilih skala.
+3. Gambar asli langsung ditampilkan sebelum proses berat dimulai; memilih file tidak memproses otomatis.
+4. User menekan aksi proses yang sesuai dengan alat aktif.
 5. Worker thread mengerjakan proses berat agar UI tetap merespons.
-6. Callback `after` Tkinter mengembalikan status proses dan progress download model ke UI.
-7. Hasil dikembalikan ke UI; user memilih `Simpan PNG`, lalu ukuran output dibaca ulang untuk verifikasi.
+6. Callback `after` Tkinter mengembalikan status proses dan progress download/model/frame ke UI.
+7. Hasil dikembalikan ke UI; user memilih Export/Simpan, lalu output divalidasi.
 
 ### Remove Background pipeline
 
@@ -99,8 +123,32 @@ Saat ini source aplikasi masih terpusat pada satu file Python. Jangan memecahnya
 - `process_folder` menerima PNG, JPG, JPEG, WEBP, dan BMP.
 - File diproses satu per satu dalam worker thread.
 - `_get_next_sequence_name` membersihkan nama batch dan mencari nomor yang belum dipakai.
-- Output batch memakai pola `<nama-batch>-<nomor>.png` dan tidak boleh menimpa file yang sudah ada.
+- Batch tersedia untuk Remove Background, Upscale, dan Vectorize Image; Watermark Image/Video sengaja tidak menampilkan batch pada MVP.
+- Output batch memakai pola `<nama-batch>-<nomor>.png` atau `.svg` dan tidak boleh menimpa file yang sudah ada.
 - User dapat membatalkan batch; gambar yang sedang berjalan boleh selesai sebelum worker berhenti.
+
+### Vectorize Image
+
+- `VectorizeService` memanggil API Python VTracer 0.6.x `convert_image_to_svg_py` dengan preset Logo, Illustration, Line Art, atau Detailed.
+- Input dibatasi ke PNG, JPG/JPEG, WebP, dan BMP.
+- VTracer bekerja di temporary directory. XML root SVG dan elemen grafis diverifikasi sebelum hasil disimpan secara atomic.
+- Progress ditampilkan sebagai status/spinner karena binding tidak menyediakan persentase yang bisa dipercaya.
+- Preview tidak merender SVG native; UI hanya menampilkan status validasi dan informasi output.
+
+### Remove Watermark Image
+
+- `MaskCanvas` menyimpan mask L pada ukuran pixel source, sementara canvas hanya menampilkan preview letterbox + zoom.
+- Brush, rectangle, eraser, clear, undo/redo, dan multi-stroke tersedia tanpa tracking/auto-detect.
+- `LamaInpaintService` melakukan ROI context dan tile 512px overlap; komposisi hanya mengganti area mask.
+- Alpha input dipasang kembali ke hasil dan ukuran output harus sama persis.
+
+### Remove Watermark Static Video
+
+- `probe_video` memakai ffprobe bundle dan mengembalikan ukuran visual setelah autorotate, FPS nominal/average, durasi, audio, rotasi, dan VFR warning.
+- `VideoProcessor` membaca raw BGR frame satu per satu dari FFmpeg, memproses dengan mask yang sama, lalu menulis frame ke encoder MP4.
+- Audio dicoba dengan `-c:a copy`; fallback video-only hanya dilakukan jika stderr encoder mengindikasikan masalah mux audio.
+- Partial output memakai ekstensi `.mp4` agar FFmpeg mengenali container, divalidasi dengan ffprobe sebelum dipindahkan, lalu dibersihkan saat cancel/error.
+- Event cancellation menghentikan loop dan terminasi subprocess setelah frame yang sedang aman dilepas.
 
 ### Penyimpanan dan metadata
 
@@ -112,6 +160,7 @@ Saat ini source aplikasi masih terpusat pada satu file Python. Jangan memecahnya
 ## Memory dan engine berat
 
 - Session `rembg` disimpan lazy-load pada `_rembg_session`.
+- Session LaMa disimpan lazy-load pada `LamaInpaintService` dan dilepas saat pindah engine atau aplikasi ditutup.
 - Saat model berubah atau alat berpindah, session lama dilepas dan `gc.collect()` dipanggil.
 - ONNX SessionOptions mengatur `enable_cpu_mem_arena = False` pada jalur session yang tersedia.
 - RAM ditampilkan melalui `get_process_memory_mb` sebagai RSS proses.
@@ -125,6 +174,7 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 - `build_exe.py` membuat executable one-file windowed bernama `WhiteFlood_BG_Remover.exe`.
 - `RUN_APP.vbs` memilih EXE di `dist` bila tersedia; jika belum ada, launcher memakai `pythonw.exe` untuk source agar console tidak muncul.
 - Aset logo, folder `realesrgan`, metadata package, dan dependency runtime dikumpulkan ke bundle.
+- Folder `assets/` dan `ffmpeg/` sudah disiapkan sebagai resource path development/`_MEIPASS`; model LaMa dan binary FFmpeg belum disertakan.
 - Script build bersifat destruktif terhadap `build/`, `dist/`, dan file `.spec`; target harus diperiksa sebelum dijalankan.
 
 Build terakhir yang dicek:
@@ -150,6 +200,8 @@ Build terakhir yang dicek:
 - database aplikasi;
 - login atau akun user;
 - sinkronisasi antar-device;
-- test suite otomatis khusus pipeline gambar;
+- tracking watermark dan auto-detect;
+- renderer SVG native Windows atau node editor;
 - benchmark RAM lintas ukuran gambar dan mode AI;
-- validasi visual otomatis untuk kualitas tepi alpha.
+- validasi visual otomatis untuk kualitas tepi alpha;
+- runtime test dengan model LaMa, VTracer wheel, dan binary FFmpeg bundle.

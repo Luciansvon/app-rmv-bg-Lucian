@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/processing-local%20first-2E8B57" alt="Local-first processing">
 </p>
 
-WhiteFlood combines two independent image tools in one focused workflow: remove a background without changing the original pixel dimensions, or upscale a product photo to 2x, 4x, or 8x while preserving PNG transparency.
+WhiteFlood is a local-first desktop workbench for furniture/catalog media. It keeps the original two image tools and adds Vectorize Image plus static-mask watermark removal for images and videos.
 
 ## Features
 
@@ -34,11 +34,24 @@ WhiteFlood combines two independent image tools in one focused workflow: remove 
 - 8x uses a 4x AI pass followed by a Lanczos 2x resize.
 - Exact output dimensions are checked before saving.
 
+### Vectorize Image
+
+- VTracer `0.6.15` converts PNG, JPG/JPEG, WebP, or BMP into validated SVG.
+- Presets: Logo, Illustration, Line Art, and Detailed.
+- SVG preview is status/output information; there is no native node editor.
+
+### Remove Watermark
+
+- Image and static-video modes use a source-pixel mask with brush, rectangle, eraser, zoom, clear, undo, and redo.
+- LaMa ONNX processes only the masked ROI/tile area and preserves image alpha/dimensions.
+- Video processing streams one frame at a time through bundled FFmpeg; audio copy, cancellation, VFR warning, and output validation are included in the MVP.
+
 ### Product workflow
 
 - Before/After split-slider preview with cached display bitmaps for smoother dragging.
 - Visible process phase and percentage for AI model downloads.
 - Single-image and folder batch processing.
+- Batch remains available for Remove Background, Upscale, and Vectorize Image. Watermark batch/tracking is intentionally deferred.
 - Collision-safe batch filenames.
 - DPI, ICC profile, and EXIF metadata are preserved when supported.
 - RSS memory usage is visible in the app while processing.
@@ -84,11 +97,14 @@ The build uses PyInstaller `--onefile --windowed` and writes the executable to `
 | Upscale 2x | 2048 x 2048 | 4096 x 4096 |
 | Upscale 4x | 2048 x 2048 | 8192 x 8192 |
 | Upscale 8x | 2048 x 2048 | 16384 x 16384 |
+| Remove Watermark Image | 2048 x 2048 | 2048 x 2048 PNG |
+| Remove Watermark Video | visual input size | same visual size MP4 |
 
 ## Privacy and limitations
 
 - Images stay on the local computer during processing.
 - The first use of an AI background-removal mode may require an internet connection to download its model.
+- LaMa model and pinned FFmpeg LGPL Windows x64 binaries must be added to the application bundle before watermark release packaging.
 - Upscale 8x and large source images require more RAM, GPU resources, and disk space.
 - The bundled release was built on Windows; GPU/Vulkan support can vary by computer.
 
@@ -99,6 +115,8 @@ The build uses PyInstaller `--onefile --windowed` and writes the executable to `
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — active source architecture.
 - [`docs/ERROR_SOLUTIONS.md`](docs/ERROR_SOLUTIONS.md) — evidence-based bug fixes.
 - [`docs/WORKLOG.md`](docs/WORKLOG.md) — implementation and verification history.
+
+- [`docs/WHITEFLOOD_UI_REDESIGN.md`](docs/WHITEFLOOD_UI_REDESIGN.md) - visual baseline and page contracts.
 
 ## License
 

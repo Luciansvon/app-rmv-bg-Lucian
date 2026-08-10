@@ -10,16 +10,20 @@
 
 ## What it does
 
-WhiteFlood provides two independent tools:
+WhiteFlood provides five independent workbench pages:
 
 - **Remove Background** — local AI or white-background flood removal, with exact input dimensions and RGBA PNG output.
 - **Upscale** — 2x, 4x, or 8x enlargement through the bundled Upscayl NCNN / Real-ESRGAN backend.
+- **Vectorize Image** - VTracer `0.6.15` raster-to-SVG conversion with four presets.
+- **Remove Watermark Image** - static source-pixel mask and LaMa ONNX inpainting.
+- **Remove Watermark Video** - one static mask applied frame-by-frame through FFmpeg.
 
 ## Main features
 
 - Cached Before/After split-slider preview for smoother dragging.
 - Model download percentage shown inside the app.
 - Single-image and folder batch processing.
+- Batch is available for Remove Background, Upscale, and Vectorize Image. Watermark batch/tracking is deferred.
 - Collision-safe output names.
 - PNG transparency and supported metadata preserved.
 - Memory usage shown as process RSS while the app is working.
@@ -68,6 +72,8 @@ The build script cleans the local `build/`, `dist/`, and generated `.spec` file 
 PNG, JPG, JPEG, WEBP, and BMP.
 
 The first AI background-removal run may need an internet connection to download a model. Image processing remains local.
+
+Watermark release packaging also needs the OpenCV Zoo LaMa model under `assets/models/` and pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/`. They are intentionally not included by this source patch.
 
 ---
 

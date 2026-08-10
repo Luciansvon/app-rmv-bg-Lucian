@@ -167,3 +167,50 @@ Kesesuaian VBS pada instalasi Python/EXE kantor dan progress aktual dari koneksi
 - `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
 - `review-temp/WhiteFlood_BG_Remover_App/RUN_APP.bat`
 - `review-temp/WhiteFlood_BG_Remover_App/RUN_APP.vbs`
+
+## ERR-003 - Preset VTracer dan nama temporary MP4 tidak aman untuk engine
+
+Tanggal: 2026-08-10
+Versi: 2.5.0
+Area: Vectorize | Remove Watermark Video
+Status: Diperbaiki
+
+### Gejala
+
+Audit source menunjukkan preset Detailed mengirim `length_threshold=3.0`, sementara dokumentasi binding VTracer 0.6.x menetapkan rentang spline mulai 3.5. Pipeline video juga membentuk partial output dengan suffix `.partial`, sehingga container output tidak dapat diandalkan untuk ditebak dari nama file.
+
+### Hasil yang diharapkan
+
+Preset selalu memakai rentang parameter resmi binding yang dipin. Partial video tetap memiliki ekstensi/container MP4 dan divalidasi sebelum dipindahkan ke output final.
+
+### Root cause
+
+Konfigurasi preset belum dicocokkan kembali dengan README Python binding VTracer tag `0.6.15`. Nama temporary video sebelumnya menambahkan `.partial` setelah `.mp4`, sehingga ekstensi terakhir bukan lagi `.mp4`.
+
+### Solusi
+
+- Mengubah Detailed menjadi `length_threshold=3.5`.
+- Menambahkan capability/version guard untuk `vtracer==0.6.15`.
+- Mengubah partial video menjadi pola `<nama>.partial.mp4` dan menambahkan `-f mp4`.
+- Memprobe partial output dan memvalidasi dimensi, FPS, durasi, serta jumlah frame sebelum atomic replace.
+
+### Perlindungan regresi
+
+- unittest memeriksa rentang preset VTracer.
+- unittest memeriksa command encoder audio/video-only dan suffix MP4.
+- unittest memeriksa penolakan dimension drift.
+
+### Bukti verifikasi aktual
+
+`python -m unittest discover -s tests -v` lulus dengan 8 test. AST parse source aktif juga lulus.
+
+### Batasan
+
+VTracer runtime dan FFmpeg Windows bundle belum dijalankan, jadi keberhasilan engine nyata dan kompatibilitas codec audio masih menunggu smoke test dengan dependency/model/binary yang disetujui.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/features/vectorize/presets.py`
+- `review-temp/WhiteFlood_BG_Remover_App/features/vectorize/service.py`
+- `review-temp/WhiteFlood_BG_Remover_App/features/watermark/video.py`
+- `tests/test_features.py`

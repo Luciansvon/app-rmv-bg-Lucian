@@ -14,6 +14,8 @@ import importlib.util
 import re
 import math
 import time
+import shutil
+import tempfile
 from pathlib import Path
 from collections import deque
 
@@ -21,6 +23,19 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageFilter, ImageDraw, ImageTk
 import numpy as np
+
+from features.vectorize import VectorizeError, VectorizeService, preset_names
+from features.watermark import (
+    LamaInpaintError,
+    LamaInpaintService,
+    MaskCanvas,
+    MediaError,
+    VideoError,
+    VideoProcessor,
+    VideoResult,
+    collision_safe_path,
+    probe_video,
+)
 
 # ── Fix pythonw (windowless) stdout/stderr error ────────
 class _DummyWriter:
@@ -86,8 +101,13 @@ APP_NAME = "WhiteFlood BG Remover"
 VERSION = "2.5.0"
 DEVELOPER_CREDIT = "Built by Bima Chakti\n\u00a9 2026 Bima Chakti"
 
+TOOL_WORKSPACE = "workspace"
 TOOL_REMOVE_BG = "remove_bg"
 TOOL_UPSCALE = "upscale"
+TOOL_VECTORIZE = "vectorize"
+TOOL_WATERMARK = "watermark"
+WATERMARK_IMAGE = "Image"
+WATERMARK_VIDEO = "Video"
 UPSCAYL_MODEL = "realesrgan-x4plus"
 UPSCAYL_AI_MAX_SCALE = 4
 
@@ -920,17 +940,20 @@ class WhiteFloodApp(ctk.CTk):
         self._set_app_icon()
 
         # State Variables
-        self.active_tool = TOOL_REMOVE_BG
+        self.active_tool = TOOL_WORKSPACE
         self.mode_var = ctk.StringVar(value=MODE_FURNITURE)
         self.refine_var = ctk.StringVar(value=REFINE_ORIGINAL)
         self.scale_var = ctk.IntVar(value=2)
+        self.vector_preset_var = ctk.StringVar(value="Logo")
+        self.watermark_mode_var = ctk.StringVar(value=WATERMARK_IMAGE)
+        self.watermark_brush_var = ctk.IntVar(value=50)
         self.threshold_var = ctk.IntVar(value=220)
         self.fringe_var = ctk.IntVar(value=30)
         self.aggressive_var = ctk.BooleanVar(value=False)
         self.output_dir = ctk.StringVar(value="")
         self.batch_name_var = ctk.StringVar(value="kursi-panjang")
         self.status_text = ctk.StringVar(
-            value="Siap. Pilih alat 'Hapus Background' atau 'Upscale'."
+            value="Siap. Pilih alat untuk mulai. Semua proses tetap lokal."
         )
         self.preview_file_var = ctk.StringVar(value="Belum ada file")
         self.preview_state_var = ctk.StringVar(value="SIAP  /  LOKAL")
@@ -941,10 +964,19 @@ class WhiteFloodApp(ctk.CTk):
         self._original = None
         self._original_meta = {}
         self._result = None
+        self._vector_result = None
+        self._video_result = None
+        self._watermark_kind = None
         self._processing = False
         self._batch_cancelled = False
+        self._cancel_event = threading.Event()
+        self._lama_service = None
+        self._video_temp_dir = None
+        self._video_source_info = None
+        self._closing = False
 
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _set_app_icon(self):
         """Set window icon from logo.ico or logo.png."""
@@ -1008,29 +1040,56 @@ class WhiteFloodApp(ctk.CTk):
             font=ctk.CTkFont(size=10), text_color=C["dim"], anchor="w",
         ).pack(fill="x", pady=(0, 12))
 
-        # Tool Navigation Tabs (Remove BG vs Upscale)
+        # Tool Navigation Tabs. The six visual pages share one rail.
         self._section_label(sidebar, "ALAT AKTIF")
         nav_f = ctk.CTkFrame(sidebar, fg_color=C["card_alt"], corner_radius=6)
         nav_f.pack(fill="x", pady=(0, 10))
         nav_f.columnconfigure((0, 1), weight=1)
 
+        self.btn_tool_home = ctk.CTkButton(
+            nav_f, text="Workspace", command=lambda: self._switch_tool(TOOL_WORKSPACE),
+            fg_color=C["accent"], hover_color=C["accent_hover"],
+            font=ctk.CTkFont(size=10, weight="bold"), height=32, corner_radius=7,
+        )
+        self.btn_tool_home.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+
         self.btn_tool_rmbg = ctk.CTkButton(
             nav_f, text="Hapus Background", command=lambda: self._switch_tool(TOOL_REMOVE_BG),
-            fg_color=C["accent"], hover_color=C["accent_hover"],
-            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=7,
+            fg_color="transparent", text_color=C["dim"], hover_color=C["border"],
+            font=ctk.CTkFont(size=10, weight="bold"), height=32, corner_radius=7,
         )
-        self.btn_tool_rmbg.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+        self.btn_tool_rmbg.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
 
         self.btn_tool_upscale = ctk.CTkButton(
             nav_f, text="Upscale", command=lambda: self._switch_tool(TOOL_UPSCALE),
             fg_color="transparent", text_color=C["dim"], hover_color=C["border"],
-            font=ctk.CTkFont(size=11, weight="bold"), height=34, corner_radius=7,
+            font=ctk.CTkFont(size=10, weight="bold"), height=32, corner_radius=7,
         )
-        self.btn_tool_upscale.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
+        self.btn_tool_upscale.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
+
+        self.btn_tool_vector = ctk.CTkButton(
+            nav_f, text="Vectorize Image", command=lambda: self._switch_tool(TOOL_VECTORIZE),
+            fg_color="transparent", text_color=C["dim"], hover_color=C["border"],
+            font=ctk.CTkFont(size=10, weight="bold"), height=32, corner_radius=7,
+        )
+        self.btn_tool_vector.grid(row=1, column=1, sticky="ew", padx=2, pady=2)
+
+        self.btn_tool_watermark_image = ctk.CTkButton(
+            nav_f, text="Watermark Image", command=lambda: self._open_watermark_mode(WATERMARK_IMAGE),
+            fg_color="transparent", text_color=C["dim"], hover_color=C["border"],
+            font=ctk.CTkFont(size=10, weight="bold"), height=32, corner_radius=7,
+        )
+        self.btn_tool_watermark_image.grid(row=2, column=0, sticky="ew", padx=2, pady=2)
+
+        self.btn_tool_watermark_video = ctk.CTkButton(
+            nav_f, text="Watermark Video", command=lambda: self._open_watermark_mode(WATERMARK_VIDEO),
+            fg_color="transparent", text_color=C["dim"], hover_color=C["border"],
+            font=ctk.CTkFont(size=10, weight="bold"), height=32, corner_radius=7,
+        )
+        self.btn_tool_watermark_video.grid(row=2, column=1, sticky="ew", padx=2, pady=2)
 
         # ── Tool 1: Remove BG Settings Frame ────────────────
         self.frame_rmbg_settings = ctk.CTkFrame(sidebar, fg_color="transparent")
-        self.frame_rmbg_settings.pack(fill="x")
 
         self._section_label(self.frame_rmbg_settings, "MODE REMOVE BACKGROUND")
         modes = [MODE_FURNITURE, MODE_FAST, MODE_PERSON, MODE_HIGH_DETAIL, MODE_WHITE]
@@ -1133,6 +1192,107 @@ class WhiteFloodApp(ctk.CTk):
             font=ctk.CTkFont(size=10), text_color=C["dim"], wraplength=260, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
+        # Tool 3: Vectorize Image settings
+        self.frame_vector_settings = ctk.CTkFrame(sidebar, fg_color="transparent")
+        self._section_label(self.frame_vector_settings, "VECTORIZE IMAGE")
+        self.vector_preset_menu = ctk.CTkOptionMenu(
+            self.frame_vector_settings,
+            values=list(preset_names()),
+            variable=self.vector_preset_var,
+            command=self._on_vector_preset_change,
+            fg_color=C["card_alt"], button_color=C["accent"],
+            button_hover_color=C["accent_hover"],
+            dropdown_fg_color=C["card"], dropdown_hover_color=C["border"],
+            dropdown_text_color=C["text"], text_color=C["text"],
+            font=ctk.CTkFont(size=11, weight="bold"), corner_radius=6, height=32,
+        )
+        self.vector_preset_menu.pack(fill="x", pady=(0, 4))
+        self.vector_preset_desc = ctk.CTkLabel(
+            self.frame_vector_settings,
+            text="Logo: warna bersih untuk bentuk sederhana.",
+            font=ctk.CTkFont(size=10), text_color=C["dim"],
+            wraplength=260, justify="left",
+        )
+        self.vector_preset_desc.pack(anchor="w", pady=(0, 8))
+        ctk.CTkLabel(
+            self.frame_vector_settings,
+            text="SVG dibuat lokal. Preview menampilkan status output, bukan editor node.",
+            font=ctk.CTkFont(size=10), text_color=C["dim"],
+            wraplength=260, justify="left",
+        ).pack(anchor="w", pady=(0, 10))
+
+        # Tool 4: Remove Watermark settings
+        self.frame_watermark_settings = ctk.CTkFrame(sidebar, fg_color="transparent")
+        self._section_label(self.frame_watermark_settings, "REMOVE WATERMARK")
+        self.watermark_mode_menu = ctk.CTkSegmentedButton(
+            self.frame_watermark_settings,
+            values=[WATERMARK_IMAGE, WATERMARK_VIDEO],
+            variable=self.watermark_mode_var,
+            command=self._on_watermark_mode_change,
+            fg_color=C["card_alt"], selected_color=C["accent"],
+            selected_hover_color=C["accent_hover"], unselected_color=C["card_alt"],
+            unselected_hover_color=C["border"], text_color=C["text"],
+            height=30,
+        )
+        self.watermark_mode_menu.pack(fill="x", pady=(0, 8))
+        wm_tools = ctk.CTkFrame(self.frame_watermark_settings, fg_color="transparent")
+        wm_tools.pack(fill="x", pady=(0, 4))
+        wm_tools.columnconfigure((0, 1, 2), weight=1)
+        self.btn_mask_brush = ctk.CTkButton(
+            wm_tools, text="Brush", command=lambda: self._set_mask_tool("brush"),
+            fg_color=C["accent"], hover_color=C["accent_hover"], height=28, corner_radius=5,
+            font=ctk.CTkFont(size=10, weight="bold"),
+        )
+        self.btn_mask_brush.grid(row=0, column=0, sticky="ew", padx=(0, 2))
+        self.btn_mask_rectangle = ctk.CTkButton(
+            wm_tools, text="Rectangle", command=lambda: self._set_mask_tool("rectangle"),
+            fg_color=C["card_alt"], hover_color=C["border"], height=28, corner_radius=5,
+            font=ctk.CTkFont(size=10), text_color=C["dim"],
+        )
+        self.btn_mask_rectangle.grid(row=0, column=1, sticky="ew", padx=2)
+        self.btn_mask_eraser = ctk.CTkButton(
+            wm_tools, text="Eraser", command=lambda: self._set_mask_tool("eraser"),
+            fg_color=C["card_alt"], hover_color=C["border"], height=28, corner_radius=5,
+            font=ctk.CTkFont(size=10), text_color=C["dim"],
+        )
+        self.btn_mask_eraser.grid(row=0, column=2, sticky="ew", padx=(2, 0))
+        ctk.CTkLabel(
+            self.frame_watermark_settings, text="Brush size (source px)",
+            text_color=C["dim"], font=ctk.CTkFont(size=10),
+        ).pack(anchor="w", pady=(4, 0))
+        self.mask_brush_slider = ctk.CTkSlider(
+            self.frame_watermark_settings, from_=4, to=400,
+            variable=self.watermark_brush_var, command=self._on_mask_brush_size,
+            fg_color=C["border"], progress_color=C["accent"],
+            button_color=C["accent"], button_hover_color=C["accent_hover"], height=14,
+        )
+        self.mask_brush_slider.pack(fill="x", pady=(2, 0))
+        self.mask_brush_label = ctk.CTkLabel(
+            self.frame_watermark_settings, text="50 px", text_color=C["accent"],
+            font=ctk.CTkFont(size=10, weight="bold"),
+        )
+        self.mask_brush_label.pack(anchor="e", pady=(0, 5))
+        wm_history = ctk.CTkFrame(self.frame_watermark_settings, fg_color="transparent")
+        wm_history.pack(fill="x", pady=(0, 5))
+        wm_history.columnconfigure((0, 1, 2, 3), weight=1)
+        for column, label, command in (
+            (0, "Undo", lambda: self._mask_action("undo")),
+            (1, "Redo", lambda: self._mask_action("redo")),
+            (2, "Clear", lambda: self._mask_action("clear")),
+            (3, "Reset zoom", lambda: self._mask_action("zoom_reset")),
+        ):
+            ctk.CTkButton(
+                wm_history, text=label, command=command,
+                fg_color=C["card_alt"], hover_color=C["border"],
+                text_color=C["dim"], height=26, corner_radius=5,
+                font=ctk.CTkFont(size=9),
+            ).grid(row=0, column=column, sticky="ew", padx=1)
+        ctk.CTkLabel(
+            self.frame_watermark_settings,
+            text="Mask disimpan pada ukuran pixel asli. Video memakai mask yang sama untuk semua frame.",
+            font=ctk.CTkFont(size=10), text_color=C["dim"], wraplength=260, justify="left",
+        ).pack(anchor="w", pady=(2, 10))
+
         # Single Image Actions
         self._lbl_single_section = self._section_label(sidebar, "FILE & HASIL")
 
@@ -1170,7 +1330,7 @@ class WhiteFloodApp(ctk.CTk):
         self.btn_save.grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
         # Batch Section
-        self._section_label(sidebar, "BATCH FOLDER")
+        self._section_label(sidebar, "BATCH FOLDER / IMAGE TOOLS")
 
         ctk.CTkLabel(sidebar, text="Nama Batch", text_color=C["dim"], font=ctk.CTkFont(size=11)).pack(anchor="w")
         self.entry_batch_name = ctk.CTkEntry(
@@ -1251,6 +1411,20 @@ class WhiteFloodApp(ctk.CTk):
             preview_header, textvariable=self.preview_state_var,
             font=ctk.CTkFont(size=10, weight="bold"), text_color=C["dim"], anchor="e",
         ).grid(row=0, column=1, sticky="e")
+        self.btn_header_pick = ctk.CTkButton(
+            preview_header, text="Open Image", command=self.load_and_process,
+            fg_color=C["card_alt"], hover_color=C["border"],
+            border_width=1, border_color=C["border"], text_color=C["text"],
+            font=ctk.CTkFont(size=10, weight="bold"), height=28, width=92, corner_radius=6,
+        )
+        self.btn_header_pick.grid(row=0, column=2, sticky="e", padx=(12, 4))
+        self.btn_header_save = ctk.CTkButton(
+            preview_header, text="Export", command=self.save_result,
+            fg_color=C["accent"], hover_color=C["accent_hover"],
+            text_color=C["text"], font=ctk.CTkFont(size=10, weight="bold"),
+            height=28, width=76, corner_radius=6, state="disabled",
+        )
+        self.btn_header_save.grid(row=0, column=3, sticky="e")
 
         preview_shell = ctk.CTkFrame(
             preview_area, fg_color=C["card"], corner_radius=11,
@@ -1260,8 +1434,57 @@ class WhiteFloodApp(ctk.CTk):
         preview_shell.rowconfigure(0, weight=1)
         preview_shell.columnconfigure(0, weight=1)
 
+        self.workspace_view = ctk.CTkFrame(preview_shell, fg_color=C["card"], corner_radius=10)
+        self.workspace_view.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        self.workspace_view.columnconfigure((0, 1, 2), weight=1)
+        self.workspace_view.rowconfigure(2, weight=1)
+        ctk.CTkLabel(
+            self.workspace_view, text="Welcome to WhiteFlood",
+            font=ctk.CTkFont(size=22, weight="bold"), text_color=C["text"], anchor="w",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=28, pady=(30, 2))
+        ctk.CTkLabel(
+            self.workspace_view, text="Pilih alat untuk mulai",
+            font=ctk.CTkFont(size=11), text_color=C["dim"], anchor="w",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=28, pady=(0, 18))
+        workspace_cards = (
+            ("Hapus Background", "Hapus background dari foto produk", TOOL_REMOVE_BG),
+            ("Upscale", "Naikkan resolusi dengan AI lokal", TOOL_UPSCALE),
+            ("Vectorize Image", "Ubah raster menjadi SVG", TOOL_VECTORIZE),
+            ("Remove Watermark Image", "Hapus watermark dari gambar", (TOOL_WATERMARK, WATERMARK_IMAGE)),
+            ("Remove Watermark Video", "Hapus watermark dari video", (TOOL_WATERMARK, WATERMARK_VIDEO)),
+        )
+        for index, (title, description, target) in enumerate(workspace_cards):
+            row = 2 if index < 3 else 3
+            column = index if index < 3 else index - 3
+            button = ctk.CTkButton(
+                self.workspace_view,
+                text=f"{title}\n\n{description}",
+                command=(
+                    (lambda value=target: self._switch_tool(value))
+                    if isinstance(target, str)
+                    else (lambda value=target: self._open_watermark_mode(value[1]))
+                ),
+                fg_color=C["card_alt"], hover_color=C["border"],
+                border_width=1, border_color=C["border"],
+                text_color=C["text"], font=ctk.CTkFont(size=11, weight="bold"),
+                height=112, corner_radius=8,
+            )
+            button.grid(row=row, column=column, sticky="nsew", padx=6, pady=6)
+        drop_zone = ctk.CTkButton(
+            self.workspace_view,
+            text="Pilih alat dulu, lalu buka file lokal",
+            command=lambda: self._switch_tool(TOOL_REMOVE_BG),
+            fg_color="transparent", hover_color=C["card_alt"],
+            border_width=1, border_color=C["border"], text_color=C["dim"],
+            font=ctk.CTkFont(size=11), height=42, corner_radius=6,
+        )
+        drop_zone.grid(row=4, column=0, columnspan=3, sticky="ew", padx=28, pady=(18, 28))
+
         self.preview_canvas = SplitSliderPreview(preview_shell)
         self.preview_canvas.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        self.mask_canvas = MaskCanvas(preview_shell)
+        self.mask_canvas.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        self.mask_canvas.grid_remove()
 
         self.spinner_frame = ctk.CTkFrame(preview_shell, fg_color=C["card_alt"], corner_radius=10)
         self.spinner = LoadingSpinner(self.spinner_frame, size=46, color=C["accent"], bg_color=C["card_alt"])
@@ -1301,6 +1524,9 @@ class WhiteFloodApp(ctk.CTk):
             status_bar, textvariable=self.status_text,
             font=ctk.CTkFont(size=10), text_color=C["dim"], anchor="w",
         ).grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 9))
+
+        self._show_active_surface()
+        self._update_button_states()
 
     # ───────────────────────────────────────
     #  Tool Switch & UI State Management
@@ -1344,8 +1570,9 @@ class WhiteFloodApp(ctk.CTk):
 
     def _update_batch_preview(self, _=None):
         name = sanitize_filename(self.batch_name_var.get())
+        extension = "svg" if self.active_tool == TOOL_VECTORIZE else "png"
         self.lbl_batch_preview.configure(
-            text=f"Contoh: {name}-1.png, {name}-2.png..."
+            text=f"Contoh: {name}-1.{extension}, {name}-2.{extension}..."
         )
 
     def _on_mode_change(self, _=None):
@@ -1417,36 +1644,239 @@ class WhiteFloodApp(ctk.CTk):
             self.progress_percent_var.set("Menyiapkan")
         self.status_text.set(f"{message} [RAM: {get_process_memory_mb()} MB]")
 
+    def _show_active_surface(self):
+        """Show the exact page surface required by the active tool/state."""
+        if self.active_tool == TOOL_WORKSPACE:
+            self.workspace_view.grid()
+            self.preview_canvas.grid_remove()
+            self.mask_canvas.grid_remove()
+        elif self.active_tool == TOOL_WATERMARK and self._original is not None and self._result is None:
+            self.workspace_view.grid_remove()
+            self.preview_canvas.grid_remove()
+            self.mask_canvas.grid()
+        else:
+            self.workspace_view.grid_remove()
+            self.mask_canvas.grid_remove()
+            self.preview_canvas.grid()
+
+    def _set_tool_nav_active(self):
+        buttons = (
+            (TOOL_WORKSPACE, self.btn_tool_home),
+            (TOOL_REMOVE_BG, self.btn_tool_rmbg),
+            (TOOL_UPSCALE, self.btn_tool_upscale),
+            (TOOL_VECTORIZE, self.btn_tool_vector),
+        )
+        for tool, button in buttons:
+            active = self.active_tool == tool
+            button.configure(
+                fg_color=C["accent"] if active else "transparent",
+                text_color=C["text"] if active else C["dim"],
+            )
+        for mode, button in (
+            (WATERMARK_IMAGE, self.btn_tool_watermark_image),
+            (WATERMARK_VIDEO, self.btn_tool_watermark_video),
+        ):
+            active = self.active_tool == TOOL_WATERMARK and self.watermark_mode_var.get() == mode
+            button.configure(
+                fg_color=C["accent"] if active else "transparent",
+                text_color=C["text"] if active else C["dim"],
+            )
+
     def _update_button_states(self):
-        """Reconstruct UI button states based on actual app state."""
+        """Reconstruct UI states from the current page and result state."""
+        batch_supported = self.active_tool in {TOOL_REMOVE_BG, TOOL_UPSCALE, TOOL_VECTORIZE}
+        header_open_label = "Open Video" if self.active_tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO else "Open Image"
+        header_export_label = "Export SVG" if self.active_tool == TOOL_VECTORIZE else (
+            "Export Video" if self.active_tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO else "Export"
+        )
+        self.btn_header_pick.configure(
+            text=header_open_label,
+            state="normal" if self.active_tool != TOOL_WORKSPACE and not self._processing else "disabled",
+        )
+        self.btn_header_save.configure(text=header_export_label)
+        self.btn_pick.configure(
+            text="Pilih Video" if self.active_tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO
+            else "Pilih Gambar"
+        )
         if self._processing:
             self.btn_pick.configure(state="disabled")
             self.btn_batch.configure(state="disabled")
-            self.btn_repreview.configure(state="disabled")
             self.btn_save.configure(state="disabled", fg_color=C["border"], text_color=C["text"])
-        else:
-            self.btn_pick.configure(state="normal")
-            self.btn_batch.configure(state="normal")
-            self.btn_cancel_batch.configure(state="disabled", fg_color=C["border"])
-
-            if self._original is not None:
-                self.btn_repreview.configure(state="normal")
+            self.btn_header_save.configure(state="disabled", fg_color=C["border"], text_color=C["text"])
+            if self.active_tool in {TOOL_VECTORIZE, TOOL_WATERMARK}:
+                self.btn_repreview.configure(
+                    state="normal", text="Batal", command=self._cancel_current_process,
+                )
             else:
                 self.btn_repreview.configure(state="disabled")
+            return
 
-            if self._result is not None:
-                self.btn_save.configure(
-                    state="normal", fg_color=C["green"],
-                    hover_color=C["green_dark"], text_color="#000000",
-                )
-            else:
-                self.btn_save.configure(
-                    state="disabled", fg_color=C["border"], text_color=C["text"],
-                )
+        self.btn_pick.configure(state="normal" if self.active_tool != TOOL_WORKSPACE else "disabled")
+        self.btn_batch.configure(state="normal" if batch_supported else "disabled")
+        self.btn_cancel_batch.configure(state="disabled", fg_color=C["border"])
+
+        if self.active_tool == TOOL_WORKSPACE:
+            self.btn_repreview.configure(state="disabled", text="Pilih alat", command=self.repreview)
+        elif self.active_tool == TOOL_VECTORIZE:
+            self.btn_repreview.configure(
+                state="normal" if self._original is not None else "disabled",
+                text="Convert ke SVG", command=self.repreview,
+            )
+        elif self.active_tool == TOOL_WATERMARK:
+            process_label = "Process Video" if self.watermark_mode_var.get() == WATERMARK_VIDEO else "Process Image"
+            self.btn_repreview.configure(
+                state="normal" if self._original is not None and self.mask_canvas.has_mask() else "disabled",
+                text=process_label, command=self.repreview,
+            )
+        elif self.active_tool == TOOL_UPSCALE:
+            self.btn_repreview.configure(
+                state="normal" if self._original is not None else "disabled",
+                text="Proses Upscale", command=self.repreview,
+            )
+        elif self.active_tool == TOOL_REMOVE_BG:
+            self.btn_repreview.configure(
+                state="normal" if self._original is not None else "disabled",
+                text="Proses Remove Background", command=self.repreview,
+            )
+        else:
+            self.btn_repreview.configure(
+                state="normal" if self._original is not None else "disabled",
+                text="Proses Ulang", command=self.repreview,
+            )
+
+        has_output = self._result is not None or self._vector_result is not None or self._video_result is not None
+        self.btn_save.configure(text="Simpan SVG" if self.active_tool == TOOL_VECTORIZE else "Simpan Hasil")
+        if has_output:
+            self.btn_save.configure(
+                state="normal", fg_color=C["green"],
+                hover_color=C["green_dark"], text_color="#000000",
+            )
+            self.btn_header_save.configure(
+                state="normal", fg_color=C["accent"], hover_color=C["accent_hover"], text_color=C["text"],
+            )
+        else:
+            self.btn_save.configure(
+                state="disabled", fg_color=C["border"], text_color=C["text"],
+            )
+            self.btn_header_save.configure(
+                state="disabled", fg_color=C["border"], text_color=C["dim"],
+            )
 
     def _set_buttons(self, state):
         """Deprecated helper routing to _update_button_states."""
         self._update_button_states()
+
+    def _release_rembg_session(self):
+        global _rembg_session, _rembg_model_name
+        if _rembg_session is None:
+            return
+        old_session = _rembg_session
+        _rembg_session = None
+        _rembg_model_name = None
+        try:
+            del old_session
+            gc.collect()
+        except Exception:
+            pass
+
+    def _release_lama_service(self):
+        if self._lama_service is not None:
+            self._lama_service.unload()
+            self._lama_service = None
+
+    def _cleanup_video_temp(self):
+        if self._video_temp_dir is None:
+            return
+        temp_dir = Path(self._video_temp_dir)
+        self._video_temp_dir = None
+        if temp_dir.is_dir():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _new_video_temp_output(self):
+        self._cleanup_video_temp()
+        self._video_temp_dir = Path(tempfile.mkdtemp(prefix="whiteflood-video-"))
+        return self._video_temp_dir / "processed.mp4"
+
+    def _set_mask_tool(self, tool):
+        self.mask_canvas.set_tool(tool)
+        for name, button in (
+            ("brush", self.btn_mask_brush),
+            ("rectangle", self.btn_mask_rectangle),
+            ("eraser", self.btn_mask_eraser),
+        ):
+            active = name == tool
+            button.configure(
+                fg_color=C["accent"] if active else C["card_alt"],
+                text_color=C["text"] if active else C["dim"],
+            )
+
+    def _on_mask_brush_size(self, value):
+        size = max(1, round(float(value)))
+        self.watermark_brush_var.set(size)
+        self.mask_brush_label.configure(text=f"{size} px")
+        self.mask_canvas.set_brush_size(size)
+
+    def _mask_action(self, action):
+        if action == "undo":
+            self.mask_canvas.undo()
+        elif action == "redo":
+            self.mask_canvas.redo()
+        elif action == "clear":
+            self.mask_canvas.clear_mask()
+        elif action == "zoom_reset":
+            self.mask_canvas.set_zoom(1.0)
+        self._update_button_states()
+
+    def _on_vector_preset_change(self, value):
+        descriptions = {
+            "Logo": "Warna bersih untuk logo dengan bentuk bertumpuk.",
+            "Illustration": "Menjaga detail warna untuk ilustrasi produk.",
+            "Line Art": "Mode biner untuk gambar garis hitam putih.",
+            "Detailed": "Detail path lebih tinggi untuk gambar kompleks.",
+        }
+        self.vector_preset_desc.configure(text=descriptions.get(value, ""))
+
+    def _on_watermark_mode_change(self, value=None):
+        value = value or self.watermark_mode_var.get()
+        self.watermark_mode_var.set(value)
+        self._watermark_kind = value.lower()
+        self._src_path = None
+        self._original = None
+        self._result = None
+        self._vector_result = None
+        self._video_result = None
+        self._video_source_info = None
+        self._original_meta = {}
+        self.mask_canvas.set_image(None)
+        self.preview_canvas.set_images(None, None)
+        self.preview_file_var.set("Belum ada file")
+        self.file_state_label.configure(text="Belum ada file dipilih")
+        self.preview_state_var.set(f"SIAP  /  REMOVE WATERMARK {value.upper()}")
+        self.status_text.set(f"Mode {value}: pilih file untuk mulai.")
+        self._set_tool_nav_active()
+        self._show_active_surface()
+        self._update_batch_preview()
+        self._update_button_states()
+
+    def _open_watermark_mode(self, mode):
+        self.watermark_mode_var.set(mode)
+        if self.active_tool != TOOL_WATERMARK:
+            self._switch_tool(TOOL_WATERMARK)
+        else:
+            self._on_watermark_mode_change(mode)
+
+    def _clear_media_state(self):
+        self._src_path = None
+        self._original = None
+        self._original_meta = {}
+        self._result = None
+        self._vector_result = None
+        self._video_result = None
+        self._video_source_info = None
+        self.mask_canvas.set_image(None)
+        self.preview_canvas.set_images(None, None)
+        self.preview_file_var.set("Belum ada file")
+        self.file_state_label.configure(text="Belum ada file dipilih")
 
     def _switch_tool(self, tool):
         if self._processing:
@@ -1456,43 +1886,57 @@ class WhiteFloodApp(ctk.CTk):
         if self.active_tool == tool:
             return
 
-        # Release previous heavy engine from RAM
+        if (self.active_tool == TOOL_WATERMARK) != (tool == TOOL_WATERMARK):
+            self._clear_media_state()
+
         if self.active_tool == TOOL_REMOVE_BG:
-            global _rembg_session, _rembg_model_name
-            if _rembg_session is not None:
-                old_session = _rembg_session
-                _rembg_session = None
-                _rembg_model_name = None
-                try:
-                    del old_session
-                    gc.collect()
-                except Exception:
-                    pass
+            self._release_rembg_session()
+        if self.active_tool == TOOL_WATERMARK:
+            self._release_lama_service()
 
         self.active_tool = tool
         self._result = None
+        self._vector_result = None
+        self._video_result = None
+        self._cancel_event.clear()
+
+        for frame in (
+            self.frame_rmbg_settings,
+            self.frame_upscale_settings,
+            self.frame_vector_settings,
+            self.frame_watermark_settings,
+        ):
+            frame.pack_forget()
 
         if tool == TOOL_REMOVE_BG:
-            self.btn_tool_rmbg.configure(fg_color=C["accent"], text_color=C["text"])
-            self.btn_tool_upscale.configure(fg_color="transparent", text_color=C["dim"])
-            self.frame_upscale_settings.pack_forget()
             self.frame_rmbg_settings.pack(fill="x", before=self._lbl_single_section)
-            self.btn_repreview.configure(text="Proses Ulang")
             self.preview_state_var.set("SIAP  /  REMOVE BACKGROUND")
             self.status_text.set(f"Alat aktif: Hapus Background. [RAM: {get_process_memory_mb()} MB]")
-        else:
-            self.btn_tool_upscale.configure(fg_color=C["accent"], text_color=C["text"])
-            self.btn_tool_rmbg.configure(fg_color="transparent", text_color=C["dim"])
-            self.frame_rmbg_settings.pack_forget()
+        elif tool == TOOL_UPSCALE:
             self.frame_upscale_settings.pack(fill="x", before=self._lbl_single_section)
-            self.btn_repreview.configure(text="Proses Upscale")
             self.preview_state_var.set(f"SIAP  /  UPSCALE {self.scale_var.get()}X")
             self.status_text.set(f"Alat aktif: Upscale ({self.scale_var.get()}x). [RAM: {get_process_memory_mb()} MB]")
+        elif tool == TOOL_VECTORIZE:
+            self.frame_vector_settings.pack(fill="x", before=self._lbl_single_section)
+            self.preview_state_var.set("SIAP  /  VECTORIZE IMAGE")
+            self.status_text.set("Alat aktif: Vectorize Image. Pilih raster lokal.")
+        elif tool == TOOL_WATERMARK:
+            self.frame_watermark_settings.pack(fill="x", before=self._lbl_single_section)
+            self.preview_state_var.set(f"SIAP  /  REMOVE WATERMARK {self.watermark_mode_var.get().upper()}")
+            self.status_text.set("Mask manual dipakai hanya pada media yang sedang dibuka.")
+            self._watermark_kind = self.watermark_mode_var.get().lower()
+        else:
+            self.preview_state_var.set("SIAP  /  WORKSPACE")
+            self.status_text.set("Pilih alat untuk mulai. File tidak diproses otomatis.")
 
         # Retain original image in preview if available
-        if self._original is not None:
+        if self._original is not None and tool != TOOL_WATERMARK:
             self.preview_canvas.set_images(self._original, None)
+        elif tool == TOOL_WATERMARK and self._original is not None:
+            self.mask_canvas.set_image(self._original)
 
+        self._set_tool_nav_active()
+        self._show_active_surface()
         self._update_button_states()
 
     # ───────────────────────────────────────
@@ -1500,6 +1944,9 @@ class WhiteFloodApp(ctk.CTk):
     # ───────────────────────────────────────
 
     def load_and_process(self):
+        if self.active_tool == TOOL_WATERMARK:
+            self.load_watermark_media()
+            return
         src = filedialog.askopenfilename(
             title="Pilih gambar produk",
             filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All", "*.*")],
@@ -1509,6 +1956,9 @@ class WhiteFloodApp(ctk.CTk):
         self._src_path = src
         self._original = None
         self._result = None
+        self._vector_result = None
+        self._video_result = None
+        self._video_source_info = None
         self.preview_file_var.set(Path(src).name)
         self.file_state_label.configure(text=f"File aktif: {Path(src).name}")
         self.preview_state_var.set("MEMUAT  /  LOKAL")
@@ -1519,8 +1969,8 @@ class WhiteFloodApp(ctk.CTk):
                 self._original = img.convert("RGBA") if has_alpha else img.convert("RGB")
                 self._original_meta = metadata_for_save(img)
 
-            # Immediately show original image in preview canvas BEFORE worker processing
             self.preview_canvas.set_images(self._original, None)
+            self._show_active_surface()
             self._update_button_states()
 
             orig_sz = self._original.size
@@ -1530,20 +1980,84 @@ class WhiteFloodApp(ctk.CTk):
                     f"Gambar dimuat: {orig_sz[0]}x{orig_sz[1]} px. "
                     f"Pilih skala lalu klik 'Proses Upscale'. [RAM: {get_process_memory_mb()} MB]"
                 )
-            else:
-                self.preview_state_var.set("MEMPROSES  /  REMOVE BACKGROUND")
+            elif self.active_tool == TOOL_VECTORIZE:
+                self.preview_state_var.set("SIAP  /  VECTORIZE IMAGE")
                 self.status_text.set(
-                    f"Gambar dimuat: {orig_sz[0]}x{orig_sz[1]} px. Menghapus background... [RAM: {get_process_memory_mb()} MB]"
+                    f"Gambar dimuat: {orig_sz[0]}x{orig_sz[1]} px. Pilih preset lalu convert ke SVG."
+                )
+            else:
+                self.preview_state_var.set("SIAP  /  REMOVE BACKGROUND")
+                self.status_text.set(
+                    f"Gambar dimuat: {orig_sz[0]}x{orig_sz[1]} px. "
+                    "Klik 'Proses Remove Background' saat siap."
                 )
         except Exception as e:
             self.status_text.set(f"Gagal memuat gambar: {e}")
             messagebox.showerror(APP_NAME, f"Gagal memuat gambar:\n{e}")
             return
 
-        if self.active_tool == TOOL_REMOVE_BG:
-            self._do_process()
+    def load_watermark_media(self):
+        mode = self.watermark_mode_var.get()
+        if mode == WATERMARK_VIDEO:
+            filetypes = [("Videos", "*.mp4 *.mov *.mkv *.avi *.webm"), ("All", "*.*")]
+            title = "Pilih video watermark"
+        else:
+            filetypes = [("Images", "*.png *.jpg *.jpeg *.webp *.bmp"), ("All", "*.*")]
+            title = "Pilih gambar watermark"
+        src = filedialog.askopenfilename(title=title, filetypes=filetypes)
+        if not src:
+            return
+
+        self._src_path = src
+        self._original = None
+        self._result = None
+        self._vector_result = None
+        self._video_result = None
+        self._video_source_info = None
+        self._watermark_kind = mode.lower()
+        self.preview_file_var.set(Path(src).name)
+        self.file_state_label.configure(text=f"File aktif: {Path(src).name}")
+        self.preview_state_var.set("MEMUAT  /  LOKAL")
+        try:
+            if mode == WATERMARK_VIDEO:
+                info = probe_video(src)
+                self._video_source_info = info
+                self._original = VideoProcessor().extract_first_frame(src)
+                if self._original.size != (info.width, info.height):
+                    raise VideoError(
+                        f"Frame preview tidak cocok dengan metadata video: {self._original.size} vs {(info.width, info.height)}"
+                    )
+                self.status_text.set(
+                    f"Video {info.width}x{info.height} | {info.fps:.3g} FPS | "
+                    f"{info.duration:.1f} detik | {'audio ada' if info.has_audio else 'tanpa audio'}. "
+                    "Gambar mask pada frame pertama."
+                )
+            else:
+                with Image.open(src) as img:
+                    has_alpha = img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info)
+                    self._original = img.convert("RGBA") if has_alpha else img.convert("RGB")
+                    self._original_meta = metadata_for_save(img)
+                self._video_source_info = None
+                self.status_text.set(
+                    f"Gambar dimuat: {self._original.width}x{self._original.height} px. "
+                    "Gambar mask pada area watermark."
+                )
+            self.mask_canvas.set_image(self._original)
+            self.mask_canvas.set_brush_size(self.watermark_brush_var.get())
+            self._set_mask_tool("brush")
+            self.preview_state_var.set(f"SIAP  /  REMOVE WATERMARK {mode.upper()}")
+            self._show_active_surface()
+            self._update_button_states()
+        except Exception as exc:
+            self._original = None
+            self.status_text.set(f"Gagal memuat media: {exc}")
+            messagebox.showerror(APP_NAME, f"Gagal memuat media:\n\n{exc}")
 
     def repreview(self):
+        if self.active_tool in {TOOL_VECTORIZE, TOOL_WATERMARK}:
+            if self._original is not None:
+                self._do_process()
+            return
         if self._original is None and self._src_path:
             try:
                 with Image.open(self._src_path) as img:
@@ -1557,10 +2071,200 @@ class WhiteFloodApp(ctk.CTk):
             return
         self._do_process()
 
+    def _cancel_current_process(self):
+        if not self._processing:
+            return
+        self._cancel_event.set()
+        self.status_text.set("Membatalkan proses... menunggu worker berhenti dengan aman.")
+        self.btn_repreview.configure(state="disabled")
+
+    def _do_vector_process(self):
+        if self._processing or self._original is None or self._src_path is None:
+            return
+        self._processing = True
+        self._cancel_event.clear()
+        self._result = None
+        self._vector_result = None
+        self._show_active_surface()
+        self._update_button_states()
+        self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.spinner_frame.lift()
+        self.spinner.start()
+        self.spinner_label.configure(text="Mengubah gambar ke SVG...")
+        self.progress_phase_var.set("Vectorize Image")
+        self.progress_percent_var.set("Menyiapkan")
+        self.progress.set(0.15)
+        source_path = self._src_path
+        preset = self.vector_preset_var.get()
+
+        def status_cb(message):
+            self.after(0, lambda value=message: self._apply_status_event(value, TOOL_VECTORIZE, 0))
+
+        def worker():
+            try:
+                result = VectorizeService().convert(
+                    source_path,
+                    preset,
+                    cancel_event=self._cancel_event,
+                    status_cb=status_cb,
+                )
+            except Exception as exc:
+                self.after(0, lambda error=str(exc): self._on_feature_err(error, TOOL_VECTORIZE))
+            else:
+                self.after(0, lambda value=result: self._on_vector_ok(value))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_vector_ok(self, result):
+        self.spinner.stop()
+        self.spinner_frame.place_forget()
+        self._processing = False
+        self._vector_result = result
+        self._result = None
+        self.progress.set(1.0)
+        self.progress_phase_var.set("Vectorize selesai")
+        self.progress_percent_var.set("100%")
+        self.preview_state_var.set("SELESAI  /  VECTORIZE IMAGE")
+        self.preview_canvas.set_images(self._original, None)
+        self._show_active_surface()
+        self._update_button_states()
+        self.status_text.set(
+            f"SVG valid: {result.byte_length:,} byte | preset {result.preset}. Klik 'Simpan SVG'."
+        )
+
+    def _on_video_progress(self, completed, total):
+        if total:
+            percent = max(0, min(100, int(completed / total * 100)))
+            self.progress.set(max(0.01, percent / 100))
+            self.progress_percent_var.set(f"{percent}%")
+            self.progress_phase_var.set(f"Video frame {completed}/{total}")
+            self.spinner_label.configure(text=f"Memproses video... {percent}%")
+        else:
+            self.progress.set(0.25)
+            self.progress_percent_var.set(f"Frame {completed}")
+            self.progress_phase_var.set("Memproses video")
+            self.spinner_label.configure(text=f"Memproses video... frame {completed}")
+
+    def _do_watermark_process(self):
+        if self._processing or self._original is None or self._src_path is None:
+            return
+        mask = self.mask_canvas.get_source_mask()
+        if mask.getbbox() is None:
+            messagebox.showwarning(APP_NAME, "Gambar area watermark dulu sebelum proses.")
+            return
+
+        self._release_rembg_session()
+        self._processing = True
+        self._cancel_event.clear()
+        self._result = None
+        self._video_result = None
+        source = self._original.copy()
+        mask = mask.copy()
+        kind = self.watermark_mode_var.get()
+        output_path = self._new_video_temp_output() if kind == WATERMARK_VIDEO else None
+        self._show_active_surface()
+        self._update_button_states()
+        self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.spinner_frame.lift()
+        self.spinner.start()
+        self.spinner_label.configure(text="Menghapus watermark...")
+        self.progress_phase_var.set("Remove Watermark")
+        self.progress_percent_var.set("Menyiapkan")
+        self.progress.set(0.15)
+        self.status_text.set("Memproses area mask secara lokal...")
+
+        def progress_cb(completed, total):
+            self.after(
+                0,
+                lambda done=completed, count=total: self._on_video_progress(done, count),
+            )
+
+        def worker():
+            try:
+                if self._lama_service is None:
+                    self._lama_service = LamaInpaintService()
+                if kind == WATERMARK_VIDEO:
+                    result = VideoProcessor(inpaint_service=self._lama_service).process(
+                        self._src_path,
+                        output_path,
+                        mask,
+                        cancel_event=self._cancel_event,
+                        progress_cb=progress_cb,
+                    )
+                else:
+                    result = self._lama_service.inpaint(
+                        source,
+                        mask,
+                        cancel_event=self._cancel_event,
+                    )
+            except Exception as exc:
+                self.after(0, lambda error=str(exc): self._on_feature_err(error, TOOL_WATERMARK))
+            else:
+                self.after(0, lambda value=result, media_kind=kind: self._on_watermark_ok(value, media_kind))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_watermark_ok(self, result, kind):
+        self.spinner.stop()
+        self.spinner_frame.place_forget()
+        self._processing = False
+        if kind == WATERMARK_VIDEO:
+            self._video_result = result
+            self._result = result.preview
+            output_info = result.output_info
+            self.preview_state_var.set("SELESAI  /  REMOVE WATERMARK VIDEO")
+            warning = f" Warning: {result.warning}" if result.warning else ""
+            self.status_text.set(
+                f"Video selesai: {output_info.width}x{output_info.height}, "
+                f"{output_info.fps:.3g} FPS, {output_info.duration:.1f} detik. "
+                f"Audio {'disalin' if result.audio_copied else 'tidak disalin'}.{warning} Klik 'Simpan Hasil'."
+            )
+        else:
+            self._result = result
+            self._video_result = None
+            self.preview_state_var.set("SELESAI  /  REMOVE WATERMARK IMAGE")
+            self.status_text.set(
+                f"PNG siap: {result.width}x{result.height} px, mode {result.mode}. Klik 'Simpan Hasil'."
+            )
+        self.progress.set(1.0)
+        self.progress_phase_var.set("Selesai")
+        self.progress_percent_var.set("100%")
+        self.preview_canvas.set_images(self._original, self._result)
+        self._show_active_surface()
+        self._update_button_states()
+
+    def _on_feature_err(self, error, tool):
+        self.spinner.stop()
+        self.spinner_frame.place_forget()
+        self._processing = False
+        if tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO:
+            self._cleanup_video_temp()
+        self.progress.set(0)
+        self.progress_phase_var.set("Dibatalkan" if "dibatalkan" in error.lower() else "Gagal")
+        self.progress_percent_var.set("0%")
+        self.preview_state_var.set("ERROR  /  PERLU DICEK")
+        if tool == TOOL_WATERMARK and self._original is not None:
+            self._show_active_surface()
+        elif self._original is not None:
+            self.preview_canvas.set_images(self._original, None)
+            self._show_active_surface()
+        self._update_button_states()
+        self.status_text.set(f"Gagal memproses: {error}")
+        if "dibatalkan" not in error.lower():
+            messagebox.showerror(APP_NAME, f"Gagal memproses:\n\n{error}")
+
     def _do_process(self):
         if self._processing or self._original is None:
             return
+        if self.active_tool == TOOL_VECTORIZE:
+            self._do_vector_process()
+            return
+        if self.active_tool == TOOL_WATERMARK:
+            self._do_watermark_process()
+            return
+        self._release_lama_service()
         self._processing = True
+        self._cancel_event.clear()
         self._update_button_states()
 
         tool = self.active_tool
@@ -1689,43 +2393,121 @@ class WhiteFloodApp(ctk.CTk):
         messagebox.showerror(APP_NAME, f"Gagal memproses gambar:\n\n{err}")
 
     def save_result(self):
+        if self.active_tool == TOOL_VECTORIZE:
+            self._save_vector_result()
+            return
+        if self.active_tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO:
+            self._save_video_result()
+            return
         if self._result is None:
             return
         stem = Path(self._src_path).stem if self._src_path else "output"
-        suffix = f"_upscale_{self.scale_var.get()}x.png" if self.active_tool == TOOL_UPSCALE else "_transparent.png"
+        if self.active_tool == TOOL_UPSCALE:
+            suffix = f"_upscale_{self.scale_var.get()}x.png"
+        elif self.active_tool == TOOL_WATERMARK:
+            suffix = "_watermark_removed.png"
+        else:
+            suffix = "_transparent.png"
 
         dst = filedialog.asksaveasfilename(
             title="Simpan hasil PNG", defaultextension=".png",
             initialfile=f"{stem}{suffix}",
-            filetypes=[("PNG Transparan", "*.png")],
+            filetypes=[("PNG", "*.png")],
         )
         if not dst:
             return
         try:
+            destination = collision_safe_path(dst)
             try:
-                self._result.save(dst, format="PNG", optimize=False, **self._original_meta)
+                self._result.save(destination, format="PNG", optimize=False, **self._original_meta)
             except Exception:
-                self._result.save(dst, format="PNG", optimize=False)
+                self._result.save(destination, format="PNG", optimize=False)
 
-            with Image.open(dst) as check:
+            with Image.open(destination) as check:
                 sz = check.size
                 res_sz = self._result.size
                 if sz != res_sz:
                     raise RuntimeError(f"Resolusi tersimpan tidak cocok: {res_sz} -> {sz}")
 
-            self.status_text.set(f"Disimpan: {sz[0]}x{sz[1]} px -> {Path(dst).name} [RAM: {get_process_memory_mb()} MB]")
+            self.status_text.set(f"Disimpan: {sz[0]}x{sz[1]} px -> {Path(destination).name} [RAM: {get_process_memory_mb()} MB]")
             messagebox.showinfo(
                 APP_NAME,
                 f"Tersimpan!\n\nResolusi Output: {sz[0]}x{sz[1]} px\n"
-                f"Lokasi File: {dst}\n\nBuilt by Bima Chakti.",
+                f"Lokasi File: {destination}\n\nBuilt by Bima Chakti.",
             )
         except Exception as e:
             self.status_text.set(f"Error simpan: {e}")
             messagebox.showerror(APP_NAME, f"Gagal menyimpan file:\n{e}")
 
+    def _save_vector_result(self):
+        if self._vector_result is None:
+            return
+        stem = Path(self._src_path).stem if self._src_path else "output"
+        dst = filedialog.asksaveasfilename(
+            title="Simpan hasil SVG", defaultextension=".svg",
+            initialfile=f"{stem}_vectorized.svg",
+            filetypes=[("SVG", "*.svg")],
+        )
+        if not dst:
+            return
+        try:
+            destination = collision_safe_path(dst)
+            VectorizeService.save(self._vector_result, destination)
+            self.status_text.set(f"SVG disimpan: {destination.name} ({self._vector_result.byte_length:,} byte).")
+            messagebox.showinfo(APP_NAME, f"SVG tersimpan!\n\nLokasi File: {destination}")
+        except Exception as exc:
+            self.status_text.set(f"Error simpan SVG: {exc}")
+            messagebox.showerror(APP_NAME, f"Gagal menyimpan SVG:\n\n{exc}")
+
+    def _save_video_result(self):
+        if self._video_result is None or not self._video_result.output_path.is_file():
+            return
+        stem = Path(self._src_path).stem if self._src_path else "output"
+        dst = filedialog.asksaveasfilename(
+            title="Simpan hasil video", defaultextension=".mp4",
+            initialfile=f"{stem}_watermark_removed.mp4",
+            filetypes=[("MP4 Video", "*.mp4")],
+        )
+        if not dst:
+            return
+        try:
+            destination = collision_safe_path(dst)
+            shutil.copy2(self._video_result.output_path, destination)
+            saved_info = probe_video(destination)
+            expected = self._video_result.output_info
+            if (saved_info.width, saved_info.height) != (expected.width, expected.height):
+                raise RuntimeError("Resolusi video tersimpan tidak cocok.")
+            warning = f"\n\nWarning: {self._video_result.warning}" if self._video_result.warning else ""
+            self.status_text.set(f"Video disimpan: {destination.name}.")
+            messagebox.showinfo(APP_NAME, f"Video tersimpan!\n\nLokasi File: {destination}{warning}")
+        except Exception as exc:
+            self.status_text.set(f"Error simpan video: {exc}")
+            messagebox.showerror(APP_NAME, f"Gagal menyimpan video:\n\n{exc}")
+
     # ───────────────────────────────────────
     #  Batch Workflow & Collision Avoidance
     # ───────────────────────────────────────
+
+    def _on_close(self):
+        if self._closing:
+            return
+        self._closing = True
+        if self._processing:
+            self._batch_cancelled = True
+            self._cancel_event.set()
+            self.status_text.set("Menutup WhiteFlood setelah proses berhenti...")
+            self.after(100, self._finish_close)
+            return
+        self._finish_close()
+
+    def _finish_close(self):
+        if self._processing:
+            self.after(100, self._finish_close)
+            return
+        self._release_rembg_session()
+        self._release_lama_service()
+        self._cleanup_video_temp()
+        self.destroy()
 
     def _get_next_sequence_name(self, out_dir, base_name, start_idx=1):
         sanitized = sanitize_filename(base_name)
@@ -1736,9 +2518,20 @@ class WhiteFloodApp(ctk.CTk):
                 return candidate, idx
             idx += 1
 
+    def _get_next_sequence_path(self, out_dir, base_name, extension, start_idx=1):
+        sanitized = sanitize_filename(base_name)
+        extension = extension if extension.startswith(".") else f".{extension}"
+        idx = start_idx
+        while True:
+            candidate = out_dir / f"{sanitized}-{idx}{extension}"
+            if not candidate.exists():
+                return candidate, idx
+            idx += 1
+
     def cancel_batch(self):
         if self._processing:
             self._batch_cancelled = True
+            self._cancel_event.set()
             self.status_text.set("Membatalkan batch... (menunggu gambar saat ini selesai)")
             self.btn_cancel_batch.configure(state="disabled")
 
@@ -1761,6 +2554,12 @@ class WhiteFloodApp(ctk.CTk):
             return
 
         tool = self.active_tool
+        if tool not in {TOOL_REMOVE_BG, TOOL_UPSCALE, TOOL_VECTORIZE}:
+            messagebox.showwarning(
+                APP_NAME,
+                "Batch saat ini hanya tersedia untuk Hapus Background, Upscale, dan Vectorize Image.",
+            )
+            return
         mode = self.mode_var.get()
         scale = self.scale_var.get()
         internal_model = MODE_MAP.get(mode, "birefnet-massive")
@@ -1780,10 +2579,12 @@ class WhiteFloodApp(ctk.CTk):
         th, fr, ag = self.threshold_var.get(), self.fringe_var.get(), self.aggressive_var.get()
         es, am, er = self._get_refinement_params()
         base_batch_name = self.batch_name_var.get()
+        vector_preset = self.vector_preset_var.get()
 
         total = len(files)
         self._processing = True
         self._batch_cancelled = False
+        self._cancel_event.clear()
         self._update_button_states()
         self.btn_cancel_batch.configure(state="normal", fg_color=C["red"])
 
@@ -1797,19 +2598,31 @@ class WhiteFloodApp(ctk.CTk):
             ok, errors = 0, []
             current_seq = 1
             for idx, src in enumerate(files, 1):
-                if self._batch_cancelled:
+                if self._batch_cancelled or self._cancel_event.is_set():
                     break
 
-                dst_path, next_seq = self._get_next_sequence_name(out_dir, base_batch_name, current_seq)
+                extension = ".svg" if tool == TOOL_VECTORIZE else ".png"
+                dst_path, next_seq = self._get_next_sequence_path(
+                    out_dir, base_batch_name, extension, current_seq
+                )
                 current_seq = next_seq + 1
 
                 self.after(0, lambda i=idx, n=src.name, d=dst_path.name: self._batch_tick(i, total, n, d))
                 try:
-                    process_file(
-                        src, dst_path, mode, th, fr, es, ag,
-                        model_name=internal_model, alpha_matting=am, erode_size=er,
-                        tool=tool, scale=scale, status_cb=_batch_status,
-                    )
+                    if tool == TOOL_VECTORIZE:
+                        vector_result = VectorizeService().convert(
+                            src,
+                            vector_preset,
+                            cancel_event=None,
+                            status_cb=_batch_status,
+                        )
+                        VectorizeService.save(vector_result, dst_path)
+                    else:
+                        process_file(
+                            src, dst_path, mode, th, fr, es, ag,
+                            model_name=internal_model, alpha_matting=am, erode_size=er,
+                            tool=tool, scale=scale, status_cb=_batch_status,
+                        )
                     ok += 1
                 except Exception as e:
                     errors.append(f"{src.name}: {e}")
@@ -1827,6 +2640,10 @@ class WhiteFloodApp(ctk.CTk):
         self.progress_percent_var.set(f"{int((idx / total) * 100)}%")
 
     def _batch_done(self, ok, total, errors, cancelled=False):
+        if self._closing:
+            self._processing = False
+            self._finish_close()
+            return
         self.progress.set(0)
         self.progress_percent_var.set("0%")
         self._processing = False

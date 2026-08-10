@@ -1,6 +1,6 @@
 # Implementation Plan - WhiteFlood UI, Preview, dan Distribusi
 
-Status: Disetujui; implementasi selesai, verifikasi berjalan
+Status: Disetujui; implementasi source selesai, runtime verification gate pending
 Tanggal: 2026-08-08
 
 ## Temuan yang sudah dicek
@@ -76,3 +76,74 @@ Tanggal: 2026-08-08
 - Tanpa GUI smoke test, kelancaran slider dan fidelity visual belum boleh disebut terverifikasi penuh.
 - Tanpa download model nyata, angka progress hanya bisa diuji melalui fake downloader/static smoke test; koneksi GitHub dan ukuran file aktual belum dinilai.
 - EXE baru sudah terbentuk, tetapi kesiapan distribusi binary belum boleh disebut terverifikasi penuh sebelum smoke test menjalankan EXE.
+
+## 2026-08-10 - UI redesign gate sebelum fitur baru
+
+Status: Arah visual dibuat; coding UI dan engine fitur baru menunggu tahap implementasi berikutnya.
+
+### Keputusan desain
+
+- UI dirombak sebagai enam halaman/workspace: Workspace, Hapus Background,
+  Upscale, Vectorize Image, Remove Watermark Image, dan Remove Watermark Video.
+- Batch folder tetap dipertahankan untuk Hapus Background, Upscale, dan
+  Vectorize Image. Batch watermark ditunda agar mask manual tidak salah
+  diterapkan ke file lain.
+- CustomTkinter/Tkinter, dark theme, preview besar, status bar, dan pemisahan
+  tool tetap dipertahankan.
+- Arah visual: dark utility workbench dengan satu aksen rose, inspector
+  kontekstual, dan state kosong/proses/berhasil/error yang eksplisit.
+- Board visual dibuat sebagai referensi komposisi. Board bukan bukti runtime dan
+  tidak menggantikan screenshot dari aplikasi.
+
+### Handoff
+
+- `docs/WHITEFLOOD_UI_REDESIGN.md` berisi audit, token, page contract, state
+  matrix, dan acceptance gate untuk konversi ke CustomTkinter.
+- Visual board generator disimpan di luar repository pada folder generated
+  image Codex dan tidak dijadikan source asset aplikasi.
+
+### Bukti yang sudah dijalankan
+
+- Skill design-intelligence, design-taste-frontend, dan artifact-template-system-design dibaca sesuai instruksi.
+- Reference System Design DOCX diaudit read-only; section/style audit berhasil.
+- Render reference DOCX tidak berjalan karena executable LibreOffice/soffice tidak ditemukan pada environment ini.
+
+### Batas tahap ini
+
+- Tidak ada source code aplikasi yang diubah pada tahap desain ini.
+- GUI source, smoke test, model download, instalasi dependency, dan build EXE
+  belum dijalankan.
+
+## 2026-08-10 - Implementasi feature services berdasarkan source resmi
+
+Status: Source implementation selesai; unit/static gate lulus; runtime gate menunggu persetujuan untuk dependency/model/binary/GUI.
+
+### Yang diimplementasikan
+
+- `features/vectorize/`: preset dan adapter VTracer `0.6.15`, capability/version guard, temporary SVG, XML validation, dan atomic save.
+- `features/watermark/mask_canvas.py`: source-pixel mask, letterbox mapping, brush, rectangle, eraser, zoom, clear, undo/redo, dan overlay.
+- `features/watermark/inpaint.py`: lifecycle session LaMa ONNX, ROI context, tile 512px overlap, alpha-safe composition, dan validasi dimensi.
+- `features/watermark/media.py`: bundled resource lookup, ffprobe metadata, visual rotation normalization, VFR flag, dan collision safety.
+- `features/watermark/video.py`: streaming raw BGR frame, static mask, cancellation, audio-copy fallback, VFR warning, MP4 partial output, ffprobe validation, dan cleanup.
+- `whiteflood_app.py`: enam page visual baseline, state/callback, non-auto-process setelah memilih file, serta batch tetap untuk tiga image tools ringan.
+- `tests/test_features.py`: 8 unittest tanpa dependency baru.
+
+### Catatan source audit
+
+- VTracer diikuti dari README binding pada tag `0.6.15`, bukan API rewrite `1.0.0-alpha`.
+- LaMa diikuti dari `opencv_zoo/models/inpainting_lama/lama.py` untuk BGR blob, mask binary, input name, dan output shape.
+- FFmpeg memakai input pipe/map, autorotate default untuk frame visual, serta explicit MP4 output.
+
+### Gate yang sudah lulus
+
+- Unit test: 8/8 lulus.
+- AST parse source aktif, feature package, dan test lulus.
+- Import smoke source app dengan Python system lulus.
+
+### Gate yang masih pending
+
+- Install/runtime VTracer wheel `0.6.15`.
+- Tambah model LaMa dan inferensi image nyata.
+- Tambah pinned FFmpeg/FFprobe LGPL + checksum/notice.
+- GUI smoke test dan screenshot dibanding visual board.
+- Build PyInstaller dan resource-path/console smoke test.

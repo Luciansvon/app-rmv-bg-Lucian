@@ -25,6 +25,44 @@ Worklog bukan pengganti:
 
 ---
 
+## 2026-08-10 - WhiteFlood UI baseline dan feature services
+
+Status: implementasi source dan static/unit gate selesai; GUI, model, binary FFmpeg, dan build EXE belum dijalankan pada patch ini.
+
+### Hasil
+
+- UI source aktif mengikuti visual board enam page: Workspace, Hapus Background, Upscale, Vectorize Image, Remove Watermark Image, dan Remove Watermark Video.
+- Batch tetap tersedia untuk tiga alat image yang ringan: Hapus Background, Upscale, dan Vectorize Image. Batch tidak ditampilkan untuk watermark.
+- Menambahkan adapter VTracer `0.6.15`, preset, temporary SVG, validasi XML, atomic save, dan collision safety.
+- Menambahkan MaskCanvas source-pixel, ROI/tile LaMa ONNX, ffprobe metadata, streaming raw-frame FFmpeg, cancellation, audio-copy fallback, VFR warning, output validation, dan temporary cleanup.
+- Menambahkan unittest kontrak tanpa dependency test baru.
+- Menyelaraskan implementasi dengan source resmi VTracer tag 0.6.15, OpenCV Zoo `lama.py`, dan dokumentasi FFmpeg.
+
+### Bukti verifikasi aktual
+
+- `python -m unittest discover -s tests -v` — 8 test lulus.
+- AST parse semua source feature, source app, dan test lulus.
+- Import smoke test `whiteflood_app` dengan environment Python system berhasil.
+
+### Belum diverifikasi
+
+- VTracer wheel 0.6.15 belum dipasang/diruntime.
+- Model `inpainting_lama_2025jan.onnx` belum diunduh dan inferensi nyata belum dijalankan.
+- Binary FFmpeg LGPL belum dibundel dan pipeline video nyata belum dijalankan.
+- GUI/screenshot, smoke test manual, PyInstaller EXE, console suppression, dan output nyata belum diverifikasi.
+
+### File utama
+
+- `implementation_plan.md`
+- `README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/WHITEFLOOD_UI_REDESIGN.md`
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `review-temp/WhiteFlood_BG_Remover_App/features/`
+- `tests/test_features.py`
+
+---
+
 ## 2026-08-08 - Menambahkan aturan repo dan dokumentasi baseline
 
 Status: Selesai untuk dokumentasi; tidak ada perubahan kode aplikasi.
