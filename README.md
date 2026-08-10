@@ -69,6 +69,40 @@ The release asset is a one-file, windowed build. Python is not required for the 
 
 > Windows SmartScreen may show a warning because this executable is not code-signed yet.
 
+## Spesifikasi device minimum
+
+Angka di bawah adalah baseline praktis untuk release v2.6.0, bukan hasil benchmark lintas semua tipe komputer.
+
+| Komponen | Minimum / catatan |
+|---|---|
+| OS | Windows 10 64-bit atau lebih baru. Release EXE dibuat untuk Windows x64. |
+| CPU | CPU x64 modern. Remove Background, Vectorize, dan Remove Watermark memakai jalur CPU lokal. |
+| RAM | 16 GB sebagai baseline untuk workflow AI. 32 GB lebih aman untuk gambar besar dan Upscale 8x. Benchmark minimum RAM lintas device belum tersedia. |
+| GPU | Tidak wajib untuk Remove Background, Vectorize, dan Remove Watermark. Upscale membutuhkan GPU yang mendukung Vulkan dan driver grafik yang sesuai. |
+| Ruang kosong | Minimal 5 GB untuk EXE + seluruh model yang diunduh. Sediakan 8 GB atau lebih jika sering memproses gambar besar, Upscale 8x, atau menyimpan banyak output. |
+
+Kalau komputer tidak punya GPU Vulkan, tool lain tetap dapat dipakai, tetapi Upscale tidak dijamin berjalan.
+
+## Penyimpanan model
+
+Jika semua mode AI dipakai setidaknya sekali, file model yang perlu tersedia adalah:
+
+| Fitur | Model | Ukuran |
+|---|---|---:|
+| Remove Background — Furniture Quality | BiRefNet-Massive | 972.67 MB (927.61 MiB) |
+| Remove Background — Fast | BiRefNet-General | 972.67 MB (927.61 MiB) |
+| Remove Background — Person | BiRefNet-Portrait | 972.67 MB (927.61 MiB) |
+| Remove Background — High Detail | BiRefNet-HRSOD | 972.67 MB (927.61 MiB) |
+| Remove Watermark | LaMa ONNX | 92.59 MB (88.30 MiB) |
+| **Total model yang diunduh** | **4 BiRefNet + 1 LaMa** | **3,983.26 MB (3.71 GiB)** |
+
+- Model `rembg` disimpan di `%USERPROFILE%\\.u2net`.
+- Model LaMa disimpan di `%LOCALAPPDATA%\\WhiteFlood\\models`.
+- Model Upscale tidak diunduh saat pertama kali dipakai. `realesrgan-x4plus` sudah dibundel di EXE; seluruh file model Real-ESRGAN yang ada di bundle berjumlah sekitar 46.27 MB (44.12 MiB).
+- Ukuran EXE release v2.6.0 sekitar 295.69 MB. Jadi kebutuhan dasar setelah semua model terunduh sekitar **4.28 GB (3.99 GiB)**, belum termasuk file input, output, dan file sementara.
+
+Angka model Remove Background mengikuti model yang dipakai `rembg` 2.0.78 saat audit pada 2026-08-10. Dependency di `requirements.txt` masih mengizinkan versi `rembg` yang lebih baru, sehingga ukuran model bisa berubah pada versi mendatang.
+
 ## Run from source
 
 1. Install Python 3.11 or newer.
@@ -107,7 +141,7 @@ The build uses PyInstaller `--onefile --windowed` and writes the executable to `
 
 - Images stay on the local computer during processing.
 - The first use of an AI background-removal or watermark mode may require an internet connection to download its model after user confirmation.
-- Downloaded LaMa is stored under `%LOCALAPPDATA%\\WhiteFlood\\models`; image processing remains local after download.
+- Downloaded Remove Background models are stored under `%USERPROFILE%\\.u2net`; downloaded LaMa is stored under `%LOCALAPPDATA%\\WhiteFlood\\models`. Image processing remains local after download.
 - Watermark video release packaging includes pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/` (BtbN `autobuild-2026-08-09-13-03`, FFmpeg 8.1.2).
 - Upscale 8x and large source images require more RAM, GPU resources, and disk space.
 - The bundled release was built on Windows; GPU/Vulkan support can vary by computer.

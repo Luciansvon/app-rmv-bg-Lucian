@@ -5,3 +5,6 @@ dist/
 6.0
 __pycache__/
 *.pyc
+
+# Generated test output
+**/test_out.png

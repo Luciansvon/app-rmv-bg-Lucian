@@ -228,3 +228,87 @@ Status: release publik dan asset EXE selesai; link download README sudah diarahk
 - Release: https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.0
 - Asset: `WhiteFlood_BG_Remover.exe`, digest GitHub cocok dengan SHA-256 build.
 - GUI smoke test khusus selector speed tetap tercatat sebagai pemeriksaan lanjutan.
+
+## 2026-08-10 - Plan Vectorize logo dengan pre-clean khusus preset Logo
+
+Status: Menunggu persetujuan Bima; belum ada coding Vectorize.
+Mode: REDESIGN lalu HANDOFF
+Domain: BRAND_LOGO
+Specificity: PROBLEM
+Metode: Audit lalu First Principles
+
+### Fakta yang menjadi acuan
+
+- Preset `Logo` saat ini langsung mengirim raster asli ke VTracer `0.6.15` dalam mode warna.
+- Dari laporan Bima, logo memiliki anti-alias, gradient/shading emas, background gelap, dan detail sapuan tipis.
+- Gejala output: bentuk melebar/belepotan dan detail kecil berubah menjadi path yang tidak diinginkan.
+- VTracer tidak mengunduh model; isu minimize pada download model tidak berada di jalur Vectorize.
+
+### Problem statement
+
+Untuk user yang mengubah logo raster menjadi SVG, WhiteFlood harus menangkap silhouette, figure-ground, dan detail utama logo tanpa menyalin noise warna/tepi dari raster, dengan tetap menyimpan input asli dan bekerja lokal.
+
+### Scope yang diusulkan
+
+1. Tambahkan pre-clean sementara yang hanya aktif untuk preset `Logo`:
+   - normalisasi background/alpha;
+   - flatten warna logo menjadi jumlah warna terbatas;
+   - threshold dan penghapusan speckle kecil;
+   - pertahankan sparkle, ikon utama, dan sapuan bawah berdasarkan ukuran relatifnya.
+2. Kirim hasil pre-clean dari temporary directory ke VTracer; file input user tidak disentuh.
+3. Tuning preset `Logo` berdasarkan fixture logo nyata. Preset `Illustration`, `Line Art`, dan `Detailed` tetap memakai jalur sekarang sampai ada bukti regresi.
+4. Pertahankan validasi root SVG, elemen grafis, atomic save, collision safety, batch, dan status bahwa preview SVG bukan editor node.
+5. Tambahkan opsi fallback yang jelas: jika input masih gradient/bertekstur dan pre-clean otomatis tidak aman, user diberi hasil trace dengan warning atau diarahkan ke redraw manual; jangan mengklaim auto-trace sebagai redraw sempurna.
+
+### Yang tidak dikerjakan dulu
+
+- Tidak membuat editor node native.
+- Tidak melakukan redraw geometris otomatis yang mengarang bentuk logo.
+- Tidak menambahkan upload cloud atau model AI eksternal.
+- Tidak menerapkan pre-clean Logo ke foto/ilustrasi umum.
+- Tidak menambah SVGO/dependency baru sebelum ukuran masalah dan output baseline diukur.
+
+### Acceptance criteria
+
+- Input asli tetap utuh; pre-clean hanya berupa file temporary yang dibersihkan setelah proses.
+- Fixture logo menghasilkan SVG valid, tidak kosong, dan bisa disimpan atomic.
+- Pada inspeksi 100%, 400%, dan ukuran kecil, silhouette utama tidak berubah menjadi blob; speckle/path liar berkurang dibanding baseline preset Logo.
+- Detail tipis yang memang disetujui tetap terbaca atau diberi warning jika tidak bisa dipertahankan aman.
+- Preset non-Logo dan workflow batch tidak berubah tanpa bukti regresi.
+- Test otomatis mencakup warna/alpha, cleanup temporary, validasi SVG, dan regression baseline; VTracer runtime serta GUI dicatat terpisah dari static test.
+
+### Risiko dan keputusan yang masih terbuka
+
+- Threshold terlalu agresif dapat menghapus garis tipis; threshold terlalu longgar akan mengulang masalah belepotan.
+- Flatten satu warna bisa merusak logo yang memang membutuhkan beberapa layer warna; jumlah warna harus ditentukan dari fixture, bukan angka tebakan.
+- Auto-trace tidak dapat mengetahui bentuk geometris yang dimaksud desainer jika raster terlalu rusak; redraw manual tetap fallback paling bersih.
+
+### Gate sebelum coding
+
+- Siapkan atau konfirmasi satu fixture logo asli dan baseline SVG saat ini.
+- Ukur baseline: mode warna, jumlah elemen/path, ukuran SVG, dan screenshot pada tiga skala.
+- Setelah plan ini disetujui, implementasikan patch kecil di `features/vectorize/` lalu update error/worklog dan jalankan static test, VTracer runtime, serta GUI smoke test yang disetujui.
+
+## 2026-08-10 - Fix progress Remove Background berhenti di 70%
+
+Status: Source patch dan static/unit verification selesai; GUI dengan model nyata masih pending.
+
+### Fakta dan root cause
+
+- Screenshot menunjukkan progress Remove Background melompat ke 70% lalu tidak berubah.
+- `ai_remove_bg()` mengirim angka 70 tepat sebelum `rembg_remove()` menjalankan inferensi AI.
+- `rembg_remove()` tidak menyediakan callback progress kontinu, sehingga angka 70 tidak boleh ditampilkan sebagai persentase determinate.
+
+### Scope patch
+
+- Ganti tahap inferensi AI menjadi progress indeterminate dengan pesan yang jelas.
+- Kembalikan progress bar ke mode determinate saat event angka berikutnya diterima.
+- Pertahankan progress model download, Upscale, Watermark, Vectorize, batch, cancel, dan output image tanpa perubahan perilaku.
+- Tambahkan regression test untuk kontrak urutan event sebelum inferensi.
+
+### Acceptance criteria
+
+- UI tidak lagi mengklaim `70%` saat inferensi AI belum selesai.
+- Progress bar tetap bergerak secara visual dalam mode indeterminate dan status menjelaskan bahwa AI lokal sedang menghitung mask.
+- Setelah hasil tersedia, progress kembali ke 100% dan workflow selesai seperti sebelumnya.
+- Syntax check, unit test, diff check, dan dokumentasi bugfix lulus; GUI/model runtime dicatat terpisah jika belum dijalankan.
