@@ -312,3 +312,58 @@ Status: Source patch dan static/unit verification selesai; GUI dengan model nyat
 - Progress bar tetap bergerak secara visual dalam mode indeterminate dan status menjelaskan bahwa AI lokal sedang menghitung mask.
 - Setelah hasil tersedia, progress kembali ke 100% dan workflow selesai seperti sebelumnya.
 - Syntax check, unit test, diff check, dan dokumentasi bugfix lulus; GUI/model runtime dicatat terpisah jika belum dijalankan.
+
+## 2026-08-10 - Audit lanjutan, bugfix, dan release v2.6.1
+
+Status: disetujui melalui permintaan Bima; audit menemukan bug konkret dan patch
+dikerjakan dalam scope source aktif, regression test, dokumentasi, dan build.
+Push serta release dilakukan setelah gate source dan artifact selesai.
+
+### Temuan yang terbukti
+
+- `Mode Agresif` diteruskan ke `flood_remove_bg()` tetapi tidak pernah dipakai,
+  sehingga toggle tidak mengubah hasil.
+- `adv_section` selalu di-pack dan jalur non-White Background tidak pernah
+  memanggil `pack_forget()`, sehingga kontrol White Threshold/Fringe/Agresif
+  tampil pada mode AI meskipun tidak berlaku.
+- Jika pemilihan file baru gagal dibuka, state preview dan tombol hasil lama
+  tidak dibersihkan secara konsisten.
+- Jalur input transparan Upscale dikirim sebagai RGBA langsung ke backend;
+  kontrak produk mengharuskan RGB dan alpha diproses terpisah lalu digabung.
+- Dialog Remove Background menyebut ukuran model `150-250 MB`, sedangkan
+  dokumentasi project mencatat sekitar `972.67 MB` per model BiRefNet.
+
+### Scope patch
+
+- Aktifkan Mode Agresif sebagai threshold near-white yang lebih longgar,
+  dengan regression test dan penjelasan trade-off.
+- Sinkronkan visibility advanced settings dengan mode White Background sejak
+  startup dan setiap pergantian mode.
+- Bersihkan media state sebelum pemuatan file baru dan saat load gagal agar
+  preview/output lama tidak terlihat sebagai hasil file baru.
+- Pisahkan RGB dan alpha pada Upscale transparan; gunakan padding warna dekat
+  tepi alpha, AI hanya pada RGB, Lanczos deterministik untuk alpha, lalu merge
+  RGBA dengan ukuran final yang tepat.
+- Hilangkan angka ukuran model Remove Background yang tidak sesuai dari dialog.
+- Update `docs/ERROR_SOLUTIONS.md`, `docs/WORKLOG.md`, dan arsitektur bila
+  kontrak pipeline berubah.
+
+### Gate verifikasi
+
+- Syntax check source aktif.
+- Semua unittest termasuk regression untuk agresif, alpha split/merge, dan mask
+  interaction lock; state reset serta visibility contract diverifikasi lewat
+  inspeksi source karena membutuhkan GUI untuk pembuktian runtime.
+- `git diff --check` dengan catatan jika ada warning pre-existing pada backup.
+- Build EXE dan pemeriksaan ukuran, timestamp, serta SHA-256 artifact.
+- Runtime GUI, model nyata, dan GPU Vulkan tetap dicatat terpisah bila belum
+  dijalankan.
+
+### Bukti gate sebelum publish
+
+- Syntax source aktif lulus.
+- `python -m unittest discover -s tests -v` lulus: 21 test.
+- Build `python build_exe.py` exit code 0; artifact 294,711,783 bytes,
+  timestamp 2026-08-10 17:25:16, SHA-256
+  `CE1FAE8D148AC540DF5EAD7AEB746B7F93126E5DA0AB69E593ECA040784809A`.
+- GUI EXE, model nyata, dan GPU Vulkan belum dijalankan.

@@ -131,7 +131,8 @@ review-temp/WhiteFlood_BG_Remover_App/
 - Backend eksternal dipanggil melalui `subprocess.Popen`.
 - Profil speed mengatur tile NCNN dan job string `-j`; model, alpha, dan kontrak dimensi tidak berubah.
 - Skala 2x atau 4x dikirim langsung ke backend; skala 8x memakai pass AI 4x lalu resize Lanczos 2x.
-- Gambar dengan alpha dikembalikan sebagai RGBA; gambar tanpa alpha tetap dapat dikembalikan sebagai RGB.
+- Gambar dengan alpha dipadding warnanya di sekitar tepi yang terlihat, RGB dikirim terpisah ke backend, alpha diperbesar dengan Lanczos, lalu keduanya digabung kembali sebagai RGBA.
+- Gambar tanpa alpha tetap dikirim dan dikembalikan sebagai RGB.
 - `process_file` menetapkan ukuran yang diharapkan sebagai `(lebar * skala, tinggi * skala)`.
 
 ### Batch workflow

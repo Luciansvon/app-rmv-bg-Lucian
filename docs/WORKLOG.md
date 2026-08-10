@@ -374,3 +374,41 @@ Status: source patch dan static/unit verification selesai; GUI dengan model nyat
 
 - GUI smoke test Hapus Background dengan model lokal nyata untuk memastikan animasi indeterminate,
   hasil 100%, dan durasi selesai terlihat pada EXE/runtime.
+
+---
+
+## 2026-08-10 - Audit bugfix dan build v2.6.1
+
+Status: audit source, patch, static/unit verification, dan build selesai; push
+GitHub serta release dilakukan setelah perubahan ini dikomit.
+
+### Perubahan
+
+- Mengaktifkan perilaku `Mode Agresif` pada White Background.
+- Menyembunyikan kontrol White Background saat mode lain aktif.
+- Mereset media state saat file baru gagal dibuka dan mengunci mask/control
+  saat worker sedang memproses snapshot.
+- Memisahkan RGB dan alpha pada Upscale transparan, termasuk padding warna tepi,
+  resize alpha Lanczos, dan merge RGBA berukuran tepat.
+- Menyelaraskan teks ukuran model dengan dokumentasi project dan menaikkan versi
+  aplikasi ke v2.6.1.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile .\review-temp\WhiteFlood_BG_Remover_App\whiteflood_app.py .\review-temp\WhiteFlood_BG_Remover_App\features\watermark\mask_canvas.py` lulus.
+- `python -m unittest discover -s tests -v` lulus: 21 test.
+- `git diff --check` untuk file patch lulus; warning repository penuh hanya
+  berasal dari backup lama yang tidak disentuh.
+- `python build_exe.py` lulus dengan exit code 0 pada Python 3.12.10 dan
+  PyInstaller 6.21.0.
+- Artifact: `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`,
+  dibuat 2026-08-10 17:25:16, ukuran 294,711,783 bytes (281.06 MiB),
+  SHA-256 `CE1FAE8D148AC540DF5EAD7AEB746B7F93126E5DA0AB69E593ECA040784809A`.
+- Paket build terdeteksi membawa FFmpeg, Real-ESRGAN binary/model, dan logo.
+
+### Catatan risiko
+
+- Build log masih memuat warning dependency opsional `onnx`, `filetype`,
+  `pycparser`, `scipy`, dan `tbb12.dll`; build tetap exit 0.
+- GUI EXE, model nyata, dan GPU Vulkan belum dijalankan karena membutuhkan
+  smoke test runtime terpisah.
