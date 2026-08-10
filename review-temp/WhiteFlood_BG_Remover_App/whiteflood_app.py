@@ -1,5 +1,5 @@
 """
-WhiteFlood BG Remover & Upscaler v2.5.0
+WhiteFlood BG Remover & Upscaler v2.6.0
 Built by Bima Chakti © 2026 Bima Chakti
 Aplikasi Windows Desktop untuk Foto Produk Furnitur (PNG Transparan).
 Dual Tools: Remove Background (Dimensi 100% Presisi) & Upscale (2x/4x/8x via Upscayl NCNN).
@@ -123,7 +123,7 @@ _rembg_session_threads = None
 # ═══════════════════════════════════════════════════════════
 
 APP_NAME = "WhiteFlood BG Remover"
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 DEVELOPER_CREDIT = "Built by Bima Chakti\n\u00a9 2026 Bima Chakti"
 
 TOOL_WORKSPACE = "workspace"
