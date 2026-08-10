@@ -328,3 +328,26 @@ Status: release publik dibuat dan asset EXE terupload; link download README suda
 ### Catatan gate
 
 - GUI smoke test khusus selector speed belum dijalankan pada sesi release ini; release dibuat atas permintaan Bima setelah build dan unit test lulus.
+
+---
+
+## 2026-08-10 - Download model tetap berjalan saat window diminimize
+
+Status: source patch dan static/unit verification selesai; GUI minimize serta download internet nyata masih pending.
+
+### Perubahan
+
+- Menambahkan queue thread-safe untuk memisahkan callback worker dari Tkinter main thread.
+- Mengubah worker Vectorize, Remove Watermark, Remove Background/Upscale, dan batch agar mengirim event UI melalui queue.
+- Menambahkan tracking worker dan mempertahankan cancel-on-close sebelum window dihancurkan.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile .\review-temp\WhiteFlood_BG_Remover_App\whiteflood_app.py` lulus.
+- `python -m unittest discover -s tests -v` lulus: 15 test, termasuk kontrak event worker-to-main-thread dan fake model downloader.
+- `git diff --check` lulus; warning hanya normalisasi LF/CRLF Git.
+
+### Gate pending
+
+- GUI smoke test: mulai download model, minimize window, pantau file `.part`, lalu pastikan file model final tersedia.
+- Download internet nyata dan runtime EXE belum dijalankan.

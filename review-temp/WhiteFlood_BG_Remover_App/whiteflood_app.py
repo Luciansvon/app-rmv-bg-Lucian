@@ -13,6 +13,7 @@ import threading
 import importlib.util
 import re
 import math
+import queue
 import time
 import shutil
 import tempfile
@@ -553,6 +554,27 @@ class _ModelDownloadProgress:
             self._emit(force=True)
 
 
+class _UiEventQueue:
+    """Thread-safe bridge for worker callbacks to the Tk main thread."""
+
+    def __init__(self):
+        self._events = queue.Queue()
+
+    def post(self, callback):
+        if not callable(callback):
+            raise TypeError("UI event harus berupa callable.")
+        self._events.put(callback)
+
+    def drain(self, limit=100):
+        callbacks = []
+        while len(callbacks) < limit:
+            try:
+                callbacks.append(self._events.get_nowait())
+            except queue.Empty:
+                break
+        return callbacks
+
+
 # ═══════════════════════════════════════════════════════════
 #  AI Background Removal Engine
 # ═══════════════════════════════════════════════════════════
@@ -1068,9 +1090,56 @@ class WhiteFloodApp(ctk.CTk):
         self._process_started_at = None
         self._process_timer_job = None
         self._last_process_duration = 0.0
+        self._ui_events = _UiEventQueue()
+        self._ui_event_job = None
+        self._worker_threads = set()
+        self._worker_threads_lock = threading.Lock()
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._ui_event_job = self.after(50, self._drain_ui_events)
+
+    def _post_ui_event(self, callback):
+        """Queue worker output without calling Tkinter from a worker thread."""
+        self._ui_events.post(callback)
+
+    def _has_worker_threads(self):
+        with self._worker_threads_lock:
+            return bool(self._worker_threads)
+
+    def _start_worker(self, target, name):
+        """Start a tracked worker while preserving cancel-on-close behavior."""
+        def run():
+            try:
+                target()
+            finally:
+                with self._worker_threads_lock:
+                    self._worker_threads.discard(threading.current_thread())
+
+        worker = threading.Thread(target=run, name=name, daemon=True)
+        with self._worker_threads_lock:
+            self._worker_threads.add(worker)
+        try:
+            worker.start()
+        except Exception:
+            with self._worker_threads_lock:
+                self._worker_threads.discard(worker)
+            raise
+        return worker
+
+    def _drain_ui_events(self):
+        """Apply queued worker events on the Tk main thread."""
+        for callback in self._ui_events.drain():
+            try:
+                callback()
+            except Exception as exc:
+                if not self._closing:
+                    self.status_text.set(f"Gagal memperbarui status proses: {exc}")
+
+        if self._closing and not self._processing and not self._has_worker_threads():
+            self._ui_event_job = None
+            return
+        self._ui_event_job = self.after(50, self._drain_ui_events)
 
     def _set_app_icon(self):
         """Set a tightly-cropped logo so the Windows icon is not visually tiny."""
@@ -2400,7 +2469,9 @@ class WhiteFloodApp(ctk.CTk):
         preset = self.vector_preset_var.get()
 
         def status_cb(message):
-            self.after(0, lambda value=message: self._apply_status_event(value, TOOL_VECTORIZE, 0))
+            self._post_ui_event(
+                lambda value=message: self._apply_status_event(value, TOOL_VECTORIZE, 0)
+            )
 
         def worker():
             try:
@@ -2412,11 +2483,13 @@ class WhiteFloodApp(ctk.CTk):
                     processing_profile=processing_profile,
                 )
             except Exception as exc:
-                self.after(0, lambda error=str(exc): self._on_feature_err(error, TOOL_VECTORIZE))
+                self._post_ui_event(
+                    lambda error=str(exc): self._on_feature_err(error, TOOL_VECTORIZE)
+                )
             else:
-                self.after(0, lambda value=result: self._on_vector_ok(value))
+                self._post_ui_event(lambda value=result: self._on_vector_ok(value))
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._start_worker(worker, "whiteflood-vectorize")
 
     def _on_vector_ok(self, result):
         elapsed = self._stop_process_timer()
@@ -2506,14 +2579,12 @@ class WhiteFloodApp(ctk.CTk):
         self.status_text.set("Memproses area mask secara lokal...")
 
         def progress_cb(completed, total):
-            self.after(
-                0,
+            self._post_ui_event(
                 lambda done=completed, count=total: self._on_video_progress(done, count),
             )
 
         def image_progress_cb(completed, total):
-            self.after(
-                0,
+            self._post_ui_event(
                 lambda done=completed, count=total: self._on_image_progress(done, count),
             )
 
@@ -2522,8 +2593,7 @@ class WhiteFloodApp(ctk.CTk):
                 if not LamaInpaintService.model_available():
                     LamaInpaintService.download_model(
                         cancel_event=self._cancel_event,
-                        status_cb=lambda event: self.after(
-                            0,
+                        status_cb=lambda event: self._post_ui_event(
                             lambda value=event: self._apply_status_event(value, TOOL_WATERMARK, 0),
                         ),
                     )
@@ -2547,11 +2617,15 @@ class WhiteFloodApp(ctk.CTk):
                         processing_profile=processing_profile,
                     )
             except Exception as exc:
-                self.after(0, lambda error=str(exc): self._on_feature_err(error, TOOL_WATERMARK))
+                self._post_ui_event(
+                    lambda error=str(exc): self._on_feature_err(error, TOOL_WATERMARK)
+                )
             else:
-                self.after(0, lambda value=result, media_kind=kind: self._on_watermark_ok(value, media_kind))
+                self._post_ui_event(
+                    lambda value=result, media_kind=kind: self._on_watermark_ok(value, media_kind)
+                )
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._start_worker(worker, "whiteflood-watermark")
 
     def _on_watermark_ok(self, result, kind):
         elapsed = self._stop_process_timer()
@@ -2665,11 +2739,15 @@ class WhiteFloodApp(ctk.CTk):
         es, am, er = self._get_refinement_params()
 
         def _status_cb(val):
-            self.after(0, lambda event=val: self._apply_status_event(event, tool, scale))
+            self._post_ui_event(
+                lambda event=val: self._apply_status_event(event, tool, scale)
+            )
 
         def _worker():
             try:
-                self.after(0, lambda: (self.progress.set(0.15), self.spinner.set_progress(15)))
+                self._post_ui_event(
+                    lambda: (self.progress.set(0.15), self.spinner.set_progress(15))
+                )
 
                 if tool == TOOL_UPSCALE:
                     result = upscale_image_alpha_safe(
@@ -2692,14 +2770,14 @@ class WhiteFloodApp(ctk.CTk):
                         _status_cb(100.0)
 
                 self._result = result
-                self.after(0, lambda: self._on_process_ok())
+                self._post_ui_event(lambda: self._on_process_ok())
             except Exception as e:
                 err_msg = str(e)
                 if "allocate" in err_msg.lower():
                     err_msg = "Memori RAM tidak cukup untuk Alpha Matting. Silakan gunakan mode ketajaman Original."
-                self.after(0, lambda err=err_msg: self._on_process_err(err))
+                self._post_ui_event(lambda err=err_msg: self._on_process_err(err))
 
-        threading.Thread(target=_worker, daemon=True).start()
+        self._start_worker(_worker, "whiteflood-process")
 
     def _on_process_ok(self):
         elapsed = self._stop_process_timer()
@@ -2853,7 +2931,7 @@ class WhiteFloodApp(ctk.CTk):
         if self._closing:
             return
         self._closing = True
-        if self._processing:
+        if self._processing or self._has_worker_threads():
             self._batch_cancelled = True
             self._cancel_event.set()
             self.status_text.set("Menutup WhiteFlood setelah proses berhenti...")
@@ -2862,9 +2940,15 @@ class WhiteFloodApp(ctk.CTk):
         self._finish_close()
 
     def _finish_close(self):
-        if self._processing:
+        if self._processing or self._has_worker_threads():
             self.after(100, self._finish_close)
             return
+        if self._ui_event_job is not None:
+            try:
+                self.after_cancel(self._ui_event_job)
+            except Exception:
+                pass
+            self._ui_event_job = None
         self._release_rembg_session()
         self._release_lama_service()
         self._cleanup_video_temp()
@@ -2955,8 +3039,7 @@ class WhiteFloodApp(ctk.CTk):
         self._show_processing_overlay("Memproses batch...", percent=0)
 
         def _batch_status(event):
-            self.after(
-                0,
+            self._post_ui_event(
                 lambda value=event: self._apply_status_event(value, tool, scale),
             )
 
@@ -2973,7 +3056,9 @@ class WhiteFloodApp(ctk.CTk):
                 )
                 current_seq = next_seq + 1
 
-                self.after(0, lambda i=idx, n=src.name, d=dst_path.name: self._batch_tick(i, total, n, d))
+                self._post_ui_event(
+                    lambda i=idx, n=src.name, d=dst_path.name: self._batch_tick(i, total, n, d)
+                )
                 try:
                     if tool == TOOL_VECTORIZE:
                         vector_result = VectorizeService().convert(
@@ -2995,9 +3080,11 @@ class WhiteFloodApp(ctk.CTk):
                 except Exception as e:
                     errors.append(f"{src.name}: {e}")
 
-            self.after(0, lambda: self._batch_done(ok, total, errors, cancelled=self._batch_cancelled))
+            self._post_ui_event(
+                lambda: self._batch_done(ok, total, errors, cancelled=self._batch_cancelled)
+            )
 
-        threading.Thread(target=_batch, daemon=True).start()
+        self._start_worker(_batch, "whiteflood-batch")
 
     def _batch_tick(self, idx, total, src_name, dst_name):
         self.status_text.set(
