@@ -379,8 +379,8 @@ Status: source patch dan static/unit verification selesai; GUI dengan model nyat
 
 ## 2026-08-10 - Audit bugfix dan build v2.6.1
 
-Status: audit source, patch, static/unit verification, dan build selesai; push
-GitHub serta release dilakukan setelah perubahan ini dikomit.
+Status: release publik v2.6.1 dibuat setelah audit source, patch,
+static/unit verification, build, dan push selesai.
 
 ### Perubahan
 
@@ -412,3 +412,13 @@ GitHub serta release dilakukan setelah perubahan ini dikomit.
   `pycparser`, `scipy`, dan `tbb12.dll`; build tetap exit 0.
 - GUI EXE, model nyata, dan GPU Vulkan belum dijalankan karena membutuhkan
   smoke test runtime terpisah.
+
+### Bukti release
+
+- Commit: `53b004722a02c581a57df577ee45f9066324730c` pada branch
+  `codex/fix-remove-bg-progress`.
+- Release: https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1
+- Asset `WhiteFlood_BG_Remover.exe` berstatus GitHub `uploaded`, ukuran
+  294,711,783 bytes.
+- Digest GitHub `sha256:ce1fae8d148ac540df5ead7aeb746b7f93126e5da0ab69e593eca040784809a`
+  cocok dengan hash lokal.

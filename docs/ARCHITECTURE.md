@@ -201,11 +201,11 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 
 Build release terakhir yang dicek:
 
-- Command: PyInstaller dengan konfigurasi setara `BUILD_EXE.bat`; staging temporary dipakai karena EXE pada `dist/` sedang berjalan.
-- Output: `WhiteFlood_BG_Remover.exe` pada asset release `v2.6.0`, 295,694,770 bytes, dibuat 2026-08-10 12:06:54.
+- Command: `python build_exe.py` dengan konfigurasi PyInstaller one-file windowed.
+- Output: `WhiteFlood_BG_Remover.exe` pada asset release `v2.6.1`, 294,711,783 bytes, dibuat 2026-08-10 17:25:16.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `C97C1E3C152FB9F9F0B9A74BBDB0B14E3885F3EFFBDF25784554A7319E231B85`.
-- Release URL: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.0`.
+- SHA-256: `CE1FAE8D148AC540DF5EAD7AEB746B7F93126E5DA0AB69E593ECA040784809A`.
+- Release URL: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1`.
 - Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
 - Hasil runtime EXE belum diuji; warning log berisi 723 baris, termasuk unresolved `tbb12.dll` dari optional dependency numba.

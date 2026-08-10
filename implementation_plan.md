@@ -315,9 +315,8 @@ Status: Source patch dan static/unit verification selesai; GUI dengan model nyat
 
 ## 2026-08-10 - Audit lanjutan, bugfix, dan release v2.6.1
 
-Status: disetujui melalui permintaan Bima; audit menemukan bug konkret dan patch
-dikerjakan dalam scope source aktif, regression test, dokumentasi, dan build.
-Push serta release dilakukan setelah gate source dan artifact selesai.
+Status: selesai. Audit menemukan bug konkret dan patch dikerjakan dalam scope
+source aktif, regression test, dokumentasi, build, push, dan release v2.6.1.
 
 ### Temuan yang terbukti
 
@@ -367,3 +366,10 @@ Push serta release dilakukan setelah gate source dan artifact selesai.
   timestamp 2026-08-10 17:25:16, SHA-256
   `CE1FAE8D148AC540DF5EAD7AEB746B7F93126E5DA0AB69E593ECA040784809A`.
 - GUI EXE, model nyata, dan GPU Vulkan belum dijalankan.
+
+### Handoff final
+
+- Commit: `53b004722a02c581a57df577ee45f9066324730c`.
+- Branch: `codex/fix-remove-bg-progress` sudah dipush ke origin.
+- Release: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1`.
+- Asset GitHub berstatus `uploaded`; digest cocok dengan SHA-256 lokal.
