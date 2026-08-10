@@ -6,14 +6,15 @@ import gc
 from PIL import Image
 import numpy as np
 
-from .media import resource_path
+from ..model_download import LAMA_MODEL, download_model, find_model, persistent_model_dir
 
 
 class LamaInpaintError(RuntimeError):
     """A user-facing LaMa failure."""
 
 
-MODEL_RELATIVE_PATH = Path("assets") / "models" / "inpainting_lama_2025jan.onnx"
+MODEL_RELATIVE_PATH = LAMA_MODEL.relative_path
+MODEL_DOWNLOAD_URL = LAMA_MODEL.url
 MODEL_INPUT_SIZE = 512
 TILE_OVERLAP = 64
 
@@ -26,8 +27,18 @@ class LamaInpaintService:
     """Lazy ONNX Runtime wrapper for OpenCV Zoo's LaMa model."""
 
     def __init__(self, model_path=None):
-        self.model_path = Path(model_path) if model_path else resource_path(MODEL_RELATIVE_PATH)
+        self.model_path = Path(model_path) if model_path else (
+            find_model(LAMA_MODEL) or (persistent_model_dir() / LAMA_MODEL.filename)
+        )
         self._session = None
+
+    @classmethod
+    def model_available(cls):
+        return find_model(LAMA_MODEL) is not None
+
+    @classmethod
+    def download_model(cls, cancel_event=None, status_cb=None):
+        return download_model(LAMA_MODEL, cancel_event=cancel_event, status_cb=status_cb)
 
     @property
     def is_loaded(self):
@@ -72,7 +83,7 @@ class LamaInpaintService:
             except Exception:
                 pass
 
-    def inpaint(self, image, mask, cancel_event=None):
+    def inpaint(self, image, mask, cancel_event=None, progress_cb=None):
         if not isinstance(image, Image.Image) or not isinstance(mask, Image.Image):
             raise LamaInpaintError("Input inpaint harus berupa PIL.Image.")
         if image.size != mask.size:
@@ -97,6 +108,8 @@ class LamaInpaintService:
         if bbox is None:
             raise LamaInpaintError("Mask watermark masih kosong.")
         tiles = self._build_tiles(bbox, source_rgb.size)
+        if progress_cb is not None:
+            progress_cb(0, len(tiles))
         result = np.asarray(source_rgb, dtype=np.uint8).copy()
         for index, box in enumerate(tiles, 1):
             if _cancelled(cancel_event):
@@ -119,6 +132,8 @@ class LamaInpaintService:
                 inferred_array,
                 result[y0:y1, x0:x1],
             )
+            if progress_cb is not None:
+                progress_cb(index, len(tiles))
 
         output = Image.fromarray(result, mode="RGB")
         if source_rgba is not None:

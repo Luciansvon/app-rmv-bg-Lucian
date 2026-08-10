@@ -63,6 +63,46 @@ Status: implementasi source dan static/unit gate selesai; build EXE sudah selesa
 
 ---
 
+## 2026-08-10 - Prompt model, circular progress, watermark button, dan logo
+
+Status: source patch dan build EXE selesai; GUI runtime masih pending.
+
+### Hasil
+
+- Model LaMa sekarang dicari dari bundle/source lalu `%LOCALAPPDATA%\\WhiteFlood\\models`.
+- Jika model AI belum tersedia, app meminta konfirmasi sebelum download.
+- Download LaMa memakai worker, file `.part`, atomic replace, cancellation, dan progress `% + ukuran terunduh/total` di UI.
+- Progress rembg mempertahankan jalur pooch tetapi ukuran byte sekarang tampil di UI.
+- Circular progress persen dipakai untuk Remove Background, Upscale, Vectorize, Remove Watermark Image/Video, dan batch.
+- Watermark Image melaporkan progress berdasarkan tile; Vectorize memakai progress tahap karena tidak memiliki progress kontinu.
+- Mask callback memperbaiki tombol `Process Image` yang tetap disabled setelah brush/rectangle.
+- Logo title bar dan header sidebar memakai crop alpha bounding box saat runtime.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile ...` untuk source yang terdampak lulus.
+- `python -m unittest discover -s tests -v` lulus: 10 test.
+- `git diff --check` lulus; warning yang muncul hanya normalisasi LF/CRLF Git.
+- Build `BUILD_EXE.bat` lulus dalam sekitar 3 menit 31 detik.
+- EXE: `dist/WhiteFlood_BG_Remover.exe`, 201.375.415 bytes, dibuat 2026-08-10 10:12:51.
+- SHA-256: `1E761624C5E6076ACDD5A3D10A305E2C575CCAB1470B91302E5D1CD4F1E91E5A`.
+
+### Belum diverifikasi
+
+- Dialog konfirmasi dan download model internet nyata.
+- GUI click Process Watermark, circular progress visual, logo Windows, serta smoke test Remove Background/Upscale/Vectorize/Watermark.
+- FFmpeg bundle dan model LaMa masih belum tersedia di repository; LaMa akan diunduh ke folder user saat disetujui.
+
+### File utama
+
+- `review-temp/WhiteFlood_BG_Remover_App/features/model_download.py`
+- `review-temp/WhiteFlood_BG_Remover_App/features/watermark/inpaint.py`
+- `review-temp/WhiteFlood_BG_Remover_App/features/watermark/mask_canvas.py`
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `tests/test_features.py`
+
+---
+
 ## 2026-08-10 - Build executable setelah implementasi fitur
 
 Status: build PyInstaller selesai; runtime EXE dan smoke test resource belum diverifikasi.

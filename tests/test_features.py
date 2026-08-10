@@ -19,6 +19,7 @@ from features.vectorize.service import (  # noqa: E402
     VectorizeService,
     validate_svg_text,
 )
+from features.model_download import ModelSpec, download_model  # noqa: E402
 from features.watermark.inpaint import LamaInpaintService  # noqa: E402
 from features.watermark.mask_canvas import MaskCanvas  # noqa: E402
 from features.watermark.media import MediaInfo, probe_video  # noqa: E402
@@ -60,6 +61,47 @@ class FeatureContractTests(unittest.TestCase):
         self.assertEqual(canvas._canvas_to_source(209, 119), (99, 49))
         self.assertIsNone(canvas._canvas_to_source(9, 20))
 
+    def test_mask_canvas_change_callback_is_called_after_mask_commit(self):
+        canvas = object.__new__(MaskCanvas)
+        changes = []
+        canvas._change_callback = lambda: changes.append(True)
+        canvas._notify_change()
+        self.assertEqual(changes, [True])
+
+    def test_model_download_reports_progress_and_installs_atomically(self):
+        class FakeResponse:
+            headers = {"Content-Length": "4"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _size):
+                if hasattr(self, "sent"):
+                    return b""
+                self.sent = True
+                return b"test"
+
+        spec = ModelSpec(
+            key="test",
+            label="Test model",
+            filename="test.onnx",
+            relative_path=Path("assets") / "models" / "test.onnx",
+            url="https://example.invalid/test.onnx",
+            minimum_bytes=1,
+        )
+        events = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch("features.model_download.persistent_model_dir", return_value=Path(temp_dir)):
+                with mock.patch("features.model_download.urllib.request.urlopen", return_value=FakeResponse()):
+                    destination = download_model(spec, status_cb=events.append)
+            self.assertEqual(destination.read_bytes(), b"test")
+            self.assertEqual(events[-1]["percent"], 100)
+            self.assertEqual(events[-1]["downloaded"], 4)
+            self.assertFalse(Path(temp_dir, "test.onnx.part").exists())
+
     def test_lama_inpaint_preserves_alpha_and_unmasked_pixels(self):
         class FakeSession:
             def run(self, _outputs, inputs):
@@ -71,9 +113,11 @@ class FeatureContractTests(unittest.TestCase):
         source = Image.new("RGBA", (12, 8), (10, 20, 30, 123))
         mask = Image.new("L", source.size, 0)
         mask.paste(255, (3, 2, 8, 6))
-        result = service.inpaint(source, mask)
+        progress = []
+        result = service.inpaint(source, mask, progress_cb=lambda done, total: progress.append((done, total)))
         self.assertEqual(result.mode, "RGBA")
         self.assertEqual(result.size, source.size)
+        self.assertEqual(progress[-1], (1, 1))
         self.assertEqual(result.getchannel("A").getextrema(), (123, 123))
         self.assertEqual(result.getpixel((0, 0)), source.getpixel((0, 0)))
         self.assertNotEqual(result.getpixel((4, 3))[:3], source.getpixel((4, 3))[:3])

@@ -49,7 +49,8 @@ WhiteFlood is a local-first desktop workbench for furniture/catalog media. It ke
 ### Product workflow
 
 - Before/After split-slider preview with cached display bitmaps for smoother dragging.
-- Visible process phase and percentage for AI model downloads.
+- Circular percentage progress is shown while Remove Background, Upscale, Vectorize, and Watermark workflows run.
+- Before a missing AI model is downloaded, WhiteFlood asks for confirmation and shows percentage plus downloaded/total size inside the app.
 - Single-image and folder batch processing.
 - Batch remains available for Remove Background, Upscale, and Vectorize Image. Watermark batch/tracking is intentionally deferred.
 - Collision-safe batch filenames.
@@ -62,7 +63,7 @@ For the easiest setup, download the Windows executable from the latest release:
 
 **[Download WhiteFlood BG Remover v2.5.0](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.5.0/WhiteFlood_BG_Remover.exe)**
 
-The release asset is a one-file, windowed build. Python is not required for the release executable. On the first AI background-removal run, the selected model may need to be downloaded once; the progress is shown inside the app.
+The release asset is a one-file, windowed build. Python is not required for the release executable. On first use, missing AI models are confirmed and downloaded to the user model folder with progress shown inside the app. Vectorize uses the bundled VTracer package and does not download an AI model.
 
 > Windows SmartScreen may show a warning because this executable is not code-signed yet.
 
@@ -103,8 +104,9 @@ The build uses PyInstaller `--onefile --windowed` and writes the executable to `
 ## Privacy and limitations
 
 - Images stay on the local computer during processing.
-- The first use of an AI background-removal mode may require an internet connection to download its model.
-- LaMa model and pinned FFmpeg LGPL Windows x64 binaries must be added to the application bundle before watermark release packaging.
+- The first use of an AI background-removal or watermark mode may require an internet connection to download its model after user confirmation.
+- Downloaded LaMa is stored under `%LOCALAPPDATA%\\WhiteFlood\\models`; image processing remains local after download.
+- Watermark video release packaging still needs pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/`.
 - Upscale 8x and large source images require more RAM, GPU resources, and disk space.
 - The bundled release was built on Windows; GPU/Vulkan support can vary by computer.
 

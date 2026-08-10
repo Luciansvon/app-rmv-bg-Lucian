@@ -22,8 +22,10 @@ Status implementasi fitur 2026-08-10:
 - visual baseline enam page dari `docs/WHITEFLOOD_UI_REDESIGN.md` sudah diterapkan ke source aktif;
 - source resmi VTracer tag `0.6.15`, OpenCV Zoo LaMa, dan dokumentasi FFmpeg sudah diaudit sebagai acuan adapter;
 - service Vectorize, mask, LaMa, media, dan video streaming sudah ditambahkan;
+- downloader model persisten, prompt persetujuan, progress byte di UI, dan circular progress workflow sudah ditambahkan ke source;
+- crop logo berbasis alpha untuk title bar dan header sidebar sudah ditambahkan ke source;
 - unittest kontrak service sudah ditambahkan dan lulus;
-- GUI smoke test, VTracer conversion runtime, model LaMa, dan binary FFmpeg belum dijalankan; build EXE sudah selesai.
+- GUI smoke test, VTracer conversion runtime, model LaMa, dan binary FFmpeg belum dijalankan; build patch UI sudah lulus tetapi runtime EXE belum diuji.
 
 ## Tujuan dan batas sistem
 
@@ -73,6 +75,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 |-- build_exe.py             # konfigurasi command PyInstaller
 |-- logo.ico, logo.png       # aset branding
 |-- features/
+|   |-- model_download.py      # downloader model persisten dan atomic
 |   |-- vectorize/            # preset dan adapter VTracer
 |   `-- watermark/            # mask, LaMa, media, dan video pipeline
 |-- assets/models/            # lokasi model LaMa; model tidak dikomit
@@ -90,7 +93,9 @@ review-temp/WhiteFlood_BG_Remover_App/
 - `SplitSliderPreview` menampilkan gambar asli dan hasil sebelum/sesudah. Bitmap display dan checkerboard di-cache berdasarkan ukuran canvas; drag hanya menjadwalkan satu redraw ringan setiap frame.
 - `active_tool` membedakan Workspace, Remove Background, Upscale, Vectorize, serta mode Watermark Image/Video.
 - Tombol proses, simpan, dan batch dikunci melalui state `_processing` agar proses ganda tidak berjalan bersamaan.
-- Adapter `_ModelDownloadProgress` meneruskan byte download `pooch` ke progress bar UI sehingga persentase model terlihat di aplikasi.
+- Adapter `_ModelDownloadProgress` meneruskan byte download `pooch` ke progress bar dan circular progress UI sehingga persentase serta ukuran model terlihat di aplikasi.
+- Downloader `features/model_download.py` menyimpan LaMa di folder user yang writable; dialog konfirmasi muncul sebelum download pertama.
+- `LoadingSpinner` menjadi circular progress determinate untuk workflow yang memiliki progress dan tetap indeterminate saat engine tidak menyediakan angka kontinu.
 
 ### Single-image workflow
 
@@ -132,7 +137,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 - `VectorizeService` memanggil API Python VTracer 0.6.x `convert_image_to_svg_py` dengan preset Logo, Illustration, Line Art, atau Detailed.
 - Input dibatasi ke PNG, JPG/JPEG, WebP, dan BMP.
 - VTracer bekerja di temporary directory. XML root SVG dan elemen grafis diverifikasi sebelum hasil disimpan secara atomic.
-- Progress ditampilkan sebagai status/spinner karena binding tidak menyediakan persentase yang bisa dipercaya.
+- Progress memakai tahap 10/25/85/100% untuk feedback visual; VTracer tidak menyediakan persentase kontinu yang bisa dipercaya.
 - Preview tidak merender SVG native; UI hanya menampilkan status validasi dan informasi output.
 
 ### Remove Watermark Image
@@ -140,6 +145,8 @@ review-temp/WhiteFlood_BG_Remover_App/
 - `MaskCanvas` menyimpan mask L pada ukuran pixel source, sementara canvas hanya menampilkan preview letterbox + zoom.
 - Brush, rectangle, eraser, clear, undo/redo, dan multi-stroke tersedia tanpa tracking/auto-detect.
 - `LamaInpaintService` melakukan ROI context dan tile 512px overlap; komposisi hanya mengganti area mask.
+- Model LaMa dicari dari bundle/source lalu folder user `%LOCALAPPDATA%\\WhiteFlood\\models`; jika belum ada, user ditanya sebelum downloader berjalan.
+- Progress image watermark mengikuti tile yang selesai dan progress video mengikuti frame yang selesai.
 - Alpha input dipasang kembali ke hasil dan ukuran output harus sama persis.
 
 ### Remove Watermark Static Video
@@ -174,15 +181,15 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 - `build_exe.py` membuat executable one-file windowed bernama `WhiteFlood_BG_Remover.exe`.
 - `RUN_APP.vbs` memilih EXE di `dist` bila tersedia; jika belum ada, launcher memakai `pythonw.exe` untuk source agar console tidak muncul.
 - Aset logo, folder `realesrgan`, metadata package, dan dependency runtime dikumpulkan ke bundle.
-- Folder `assets/` dan `ffmpeg/` sudah disiapkan sebagai resource path development/`_MEIPASS`; model LaMa dan binary FFmpeg belum disertakan.
+- Folder `assets/` dan `ffmpeg/` sudah disiapkan sebagai resource path development/`_MEIPASS`; LaMa dapat diunduh ke folder user writable, sedangkan binary FFmpeg belum disertakan.
 - Script build bersifat destruktif terhadap `build/`, `dist/`, dan file `.spec`; target harus diperiksa sebelum dijalankan.
 
 Build terakhir yang dicek:
 
 - Command: `BUILD_EXE.bat`.
-- Output: `dist/WhiteFlood_BG_Remover.exe`, 201,367,265 bytes, dibuat 2026-08-10 09:28:30.
+- Output: `dist/WhiteFlood_BG_Remover.exe`, 201,375,415 bytes, dibuat 2026-08-10 10:12:51.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `8EC9D22A6A638C23D971B6F1CEFB2137FC2C9D5F867D41D1455CBD92E71401F4`.
+- SHA-256: `1E761624C5E6076ACDD5A3D10A305E2C575CCAB1470B91302E5D1CD4F1E91E5A`.
 - Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - Hasil runtime EXE belum diuji; warning log berisi 723 baris, termasuk unresolved `tbb12.dll` dari optional dependency numba.
 

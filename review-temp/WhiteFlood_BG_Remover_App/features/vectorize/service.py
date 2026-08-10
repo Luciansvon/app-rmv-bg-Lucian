@@ -90,9 +90,10 @@ class VectorizeService:
             )
 
         selected = get_preset(preset)
-        _notify(status_cb, "Menyiapkan vectorize lokal...")
+        _notify(status_cb, {"kind": "phase_progress", "percent": 10, "message": "Menyiapkan vectorize lokal..."})
         with tempfile.TemporaryDirectory(prefix="whiteflood-vector-") as temp_dir:
             temp_svg = Path(temp_dir) / "result.svg"
+            _notify(status_cb, {"kind": "phase_progress", "percent": 25, "message": "Menjalankan VTracer..."})
             try:
                 converter(
                     str(source),
@@ -111,8 +112,9 @@ class VectorizeService:
             except UnicodeDecodeError as exc:
                 raise VectorizeError("Hasil SVG tidak bisa dibaca sebagai UTF-8.") from exc
 
+        _notify(status_cb, {"kind": "phase_progress", "percent": 85, "message": "Memvalidasi SVG..."})
         validate_svg_text(svg_text)
-        _notify(status_cb, "SVG valid dan siap disimpan.")
+        _notify(status_cb, {"kind": "phase_progress", "percent": 100, "message": "SVG valid dan siap disimpan."})
         return VectorizeResult(
             input_path=source,
             preset=selected.key,

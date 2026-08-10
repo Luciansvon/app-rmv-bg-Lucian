@@ -21,7 +21,8 @@ WhiteFlood provides five independent workbench pages:
 ## Main features
 
 - Cached Before/After split-slider preview for smoother dragging.
-- Model download percentage shown inside the app.
+- Circular percentage progress is shown for all processing workflows.
+- Missing AI models ask for confirmation and show downloaded/total size plus percentage inside the app.
 - Single-image and folder batch processing.
 - Batch is available for Remove Background, Upscale, and Vectorize Image. Watermark batch/tracking is deferred.
 - Collision-safe output names.
@@ -71,9 +72,9 @@ The build script cleans the local `build/`, `dist/`, and generated `.spec` file 
 
 PNG, JPG, JPEG, WEBP, and BMP.
 
-The first AI background-removal run may need an internet connection to download a model. Image processing remains local.
+The first AI background-removal or watermark run may need an internet connection to download a model after confirmation. Downloaded LaMa is stored under `%LOCALAPPDATA%\\WhiteFlood\\models`; image processing remains local. Vectorize uses VTracer and does not download an AI model.
 
-Watermark release packaging also needs the OpenCV Zoo LaMa model under `assets/models/` and pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/`. They are intentionally not included by this source patch.
+Watermark video release packaging still needs pinned Windows x64 LGPL FFmpeg binaries under `ffmpeg/`. If LaMa is not bundled, the app downloads the OpenCV Zoo model after user confirmation.
 
 ---
 

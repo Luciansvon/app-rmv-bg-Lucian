@@ -64,6 +64,17 @@ def get_process_memory_mb():
     except Exception:
         return 0.0
 
+
+def format_bytes(value):
+    value = max(0, int(value or 0))
+    units = ("B", "KB", "MB", "GB")
+    amount = float(value)
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            return f"{amount:.1f} {unit}" if unit != "B" else f"{int(amount)} B"
+        amount /= 1024
+    return f"{value} B"
+
 # ── Helper to check if model is already downloaded ──────
 def is_model_downloaded(model_name):
     u2net_dir = Path.home() / ".u2net"
@@ -203,14 +214,23 @@ def show_splash(parent):
 
 
 class LoadingSpinner(ctk.CTkCanvas):
-    """Clean animated circular spinner for processing feedback."""
+    """Animated circular progress indicator with a readable center value."""
     def __init__(self, parent, size=50, color=C["accent"], bg_color=C["card_alt"]):
         super().__init__(parent, width=size, height=size, bg=bg_color, highlightthickness=0)
         self.size = size
         self.color = color
         self.bg_color = bg_color
         self.angle = 0
+        self.progress = None
         self.running = False
+
+    def set_progress(self, percent):
+        self.progress = max(0.0, min(100.0, float(percent)))
+        self._draw()
+
+    def set_indeterminate(self):
+        self.progress = None
+        self._draw()
 
     def start(self):
         if not self.running:
@@ -223,16 +243,39 @@ class LoadingSpinner(ctk.CTkCanvas):
     def _animate(self):
         if not self.running:
             return
-        self.delete("all")
-        margin = 6
-        extent = 100
-        self.create_arc(
-            margin, margin, self.size - margin, self.size - margin,
-            start=self.angle, extent=extent,
-            style="arc", outline=self.color, width=4
-        )
+        self._draw()
         self.angle = (self.angle + 12) % 360
         self.after(30, self._animate)
+
+    def _draw(self):
+        self.delete("all")
+        margin = 6
+        self.create_oval(
+            margin, margin, self.size - margin, self.size - margin,
+            outline=C["border"], width=4,
+        )
+        if self.progress is None:
+            self.create_arc(
+                margin, margin, self.size - margin, self.size - margin,
+                start=self.angle, extent=100,
+                style="arc", outline=self.color, width=4,
+            )
+            center_text = "..."
+        else:
+            extent = 360 * self.progress / 100.0
+            if self.progress > 0:
+                extent = max(3, extent)
+            self.create_arc(
+                margin, margin, self.size - margin, self.size - margin,
+                start=90, extent=-extent,
+                style="arc", outline=self.color, width=4,
+            )
+            center_text = f"{int(round(self.progress))}%"
+        self.create_text(
+            self.size / 2, self.size / 2,
+            text=center_text, fill=C["text"],
+            font=("Segoe UI", max(8, int(self.size * 0.18)), "bold"),
+        )
 
 
 class SplitSliderPreview(ctk.CTkCanvas):
@@ -646,7 +689,11 @@ def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive"
     original_size = img.size
     rgba = img.convert("RGBA")
 
+    if status_cb:
+        status_cb(5.0)
     session = _get_rembg_session(model_name, status_cb=status_cb)
+    if status_cb:
+        status_cb(70.0)
 
     result = rembg_remove(
         rgba,
@@ -672,6 +719,8 @@ def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive"
 
     if result.size != original_size:
         raise RuntimeError("Internal error: Ukuran piksel berubah.")
+    if status_cb:
+        status_cb(100.0)
     return result
 
 
@@ -979,7 +1028,7 @@ class WhiteFloodApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _set_app_icon(self):
-        """Set window icon from logo.ico or logo.png."""
+        """Set a tightly-cropped logo so the Windows icon is not visually tiny."""
         if getattr(sys, "frozen", False):
             base = Path(sys._MEIPASS)
         else:
@@ -987,6 +1036,8 @@ class WhiteFloodApp(ctk.CTk):
 
         ico_path = base / "logo.ico"
         png_path = base / "logo.png"
+        self._logo_png_path = png_path
+        self._app_icon_photo = None
 
         def _apply_icon():
             try:
@@ -995,8 +1046,32 @@ class WhiteFloodApp(ctk.CTk):
                     self.iconbitmap(str(ico_path))
             except Exception:
                 pass
+            try:
+                self._app_icon_photo = self._load_logo_photo(png_path, 64)
+                if self._app_icon_photo is not None:
+                    self.iconphoto(True, self._app_icon_photo)
+            except Exception:
+                pass
 
         self.after(100, _apply_icon)
+
+    @staticmethod
+    def _load_logo_photo(path, size):
+        if not path.is_file():
+            return None
+        with Image.open(path) as source:
+            logo = source.convert("RGBA")
+            alpha_bbox = logo.getchannel("A").getbbox()
+            if alpha_bbox is not None:
+                left, top, right, bottom = alpha_bbox
+                pad = max(4, int(max(right - left, bottom - top) * 0.04))
+                left = max(0, left - pad)
+                top = max(0, top - pad)
+                right = min(logo.width, right + pad)
+                bottom = min(logo.height, bottom + pad)
+                logo = logo.crop((left, top, right, bottom))
+            logo.thumbnail((size, size), Image.Resampling.LANCZOS)
+            return ImageTk.PhotoImage(logo)
 
     # ───────────────────────────────────────
     #  Build UI Layout
@@ -1024,6 +1099,12 @@ class WhiteFloodApp(ctk.CTk):
         # Header Title & Version
         tf = ctk.CTkFrame(sidebar, fg_color="transparent")
         tf.pack(fill="x", pady=(0, 6))
+
+        self._brand_icon_photo = self._load_logo_photo(self._logo_png_path, 24)
+        if self._brand_icon_photo is not None:
+            ctk.CTkLabel(
+                tf, image=self._brand_icon_photo, text="", width=24, height=24,
+            ).pack(side="left", padx=(0, 6))
 
         ctk.CTkLabel(
             tf, text="WHITEFLOOD",
@@ -1482,7 +1563,7 @@ class WhiteFloodApp(ctk.CTk):
 
         self.preview_canvas = SplitSliderPreview(preview_shell)
         self.preview_canvas.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
-        self.mask_canvas = MaskCanvas(preview_shell)
+        self.mask_canvas = MaskCanvas(preview_shell, change_callback=self._on_mask_changed)
         self.mask_canvas.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
         self.mask_canvas.grid_remove()
 
@@ -1608,15 +1689,33 @@ class WhiteFloodApp(ctk.CTk):
         if isinstance(event, dict) and event.get("kind") == "model_download":
             model_name = event.get("model", "AI")
             percent = int(event.get("percent", 0))
+            downloaded = int(event.get("downloaded", 0) or 0)
+            total = int(event.get("total", 0) or 0)
             phase = f"Mengunduh model {model_name}"
             self.progress_phase_var.set(phase)
             self.progress_percent_var.set(f"{percent}%")
             self.progress.configure(progress_color=C["accent"])
             self.progress.set(max(0.01, min(1.0, percent / 100.0)))
+            self.spinner.set_progress(percent)
             self.spinner_label.configure(text=f"Mengunduh model... {percent}%")
-            self.status_text.set(
-                f"{phase}: {percent}% [RAM: {get_process_memory_mb()} MB]"
+            size_text = (
+                f"{format_bytes(downloaded)} / {format_bytes(total)}"
+                if total else format_bytes(downloaded)
             )
+            self.status_text.set(
+                f"{phase}: {percent}% ({size_text}) [RAM: {get_process_memory_mb()} MB]"
+            )
+            return
+
+        if isinstance(event, dict) and event.get("kind") == "phase_progress":
+            percent = max(0, min(100, int(event.get("percent", 0))))
+            message = str(event.get("message", "Memproses..."))
+            self.progress_phase_var.set(message)
+            self.progress_percent_var.set(f"{percent}%")
+            self.progress.set(max(0.01, percent / 100.0))
+            self.spinner.set_progress(percent)
+            self.spinner_label.configure(text=f"{message} {percent}%")
+            self.status_text.set(f"{message} [RAM: {get_process_memory_mb()} MB]")
             return
 
         if isinstance(event, (int, float)):
@@ -1630,6 +1729,7 @@ class WhiteFloodApp(ctk.CTk):
             self.progress_phase_var.set(phase)
             self.progress_percent_var.set(f"{percent}%")
             self.progress.set(max(0.01, percent / 100.0))
+            self.spinner.set_progress(percent)
             self.spinner_label.configure(text=spinner_text)
             self.status_text.set(
                 f"{phase}: {percent}% [RAM: {get_process_memory_mb()} MB]"
@@ -1638,11 +1738,26 @@ class WhiteFloodApp(ctk.CTk):
 
         message = str(event)
         self.progress_phase_var.set(message)
+        self.spinner.set_indeterminate()
+        self.progress_percent_var.set("...")
         self.spinner_label.configure(text=message)
         if "siap" in message.lower():
             self.progress.set(0.4)
-            self.progress_percent_var.set("Menyiapkan")
         self.status_text.set(f"{message} [RAM: {get_process_memory_mb()} MB]")
+
+    def _show_processing_overlay(self, label, percent=None):
+        self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
+        self.spinner_frame.lift()
+        if percent is None:
+            self.spinner.set_indeterminate()
+        else:
+            self.spinner.set_progress(percent)
+        self.spinner.start()
+        self.spinner_label.configure(text=label)
+
+    def _hide_processing_overlay(self):
+        self.spinner.stop()
+        self.spinner_frame.place_forget()
 
     def _show_active_surface(self):
         """Show the exact page surface required by the active tool/state."""
@@ -1815,6 +1930,21 @@ class WhiteFloodApp(ctk.CTk):
         self.watermark_brush_var.set(size)
         self.mask_brush_label.configure(text=f"{size} px")
         self.mask_canvas.set_brush_size(size)
+
+    def _on_mask_changed(self):
+        if self._processing:
+            return
+        self._update_button_states()
+        if self.active_tool != TOOL_WATERMARK or self._original is None:
+            return
+        mode = self.watermark_mode_var.get().upper()
+        if self.mask_canvas.has_mask():
+            region_count = self.mask_canvas.region_count()
+            self.preview_state_var.set(f"SIAP  /  REMOVE WATERMARK {mode}")
+            self.status_text.set(f"Mask siap: {region_count} region. Tekan Process untuk mulai.")
+        else:
+            self.preview_state_var.set(f"SIAP  /  REMOVE WATERMARK {mode}")
+            self.status_text.set("Mask kosong. Tandai area watermark terlebih dahulu.")
 
     def _mask_action(self, action):
         if action == "undo":
@@ -2087,13 +2217,10 @@ class WhiteFloodApp(ctk.CTk):
         self._vector_result = None
         self._show_active_surface()
         self._update_button_states()
-        self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
-        self.spinner_frame.lift()
-        self.spinner.start()
-        self.spinner_label.configure(text="Mengubah gambar ke SVG...")
+        self._show_processing_overlay("Mengubah gambar ke SVG...", percent=0)
         self.progress_phase_var.set("Vectorize Image")
-        self.progress_percent_var.set("Menyiapkan")
-        self.progress.set(0.15)
+        self.progress_percent_var.set("0%")
+        self.progress.set(0.01)
         source_path = self._src_path
         preset = self.vector_preset_var.get()
 
@@ -2116,8 +2243,8 @@ class WhiteFloodApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_vector_ok(self, result):
-        self.spinner.stop()
-        self.spinner_frame.place_forget()
+        self.spinner.set_progress(100)
+        self._hide_processing_overlay()
         self._processing = False
         self._vector_result = result
         self._result = None
@@ -2136,14 +2263,29 @@ class WhiteFloodApp(ctk.CTk):
         if total:
             percent = max(0, min(100, int(completed / total * 100)))
             self.progress.set(max(0.01, percent / 100))
+            self.spinner.set_progress(percent)
             self.progress_percent_var.set(f"{percent}%")
             self.progress_phase_var.set(f"Video frame {completed}/{total}")
             self.spinner_label.configure(text=f"Memproses video... {percent}%")
         else:
             self.progress.set(0.25)
+            self.spinner.set_indeterminate()
             self.progress_percent_var.set(f"Frame {completed}")
             self.progress_phase_var.set("Memproses video")
             self.spinner_label.configure(text=f"Memproses video... frame {completed}")
+
+    def _on_image_progress(self, completed, total):
+        if total:
+            percent = max(0, min(100, int(completed / total * 100)))
+            self.progress.set(max(0.01, percent / 100))
+            self.spinner.set_progress(percent)
+            self.progress_percent_var.set(f"{percent}%")
+            self.progress_phase_var.set(f"Watermark tile {completed}/{total}")
+            self.spinner_label.configure(text=f"Menghapus watermark... {percent}%")
+            self.status_text.set(
+                f"Memproses area watermark {completed}/{total}... "
+                f"[RAM: {get_process_memory_mb()} MB]"
+            )
 
     def _do_watermark_process(self):
         if self._processing or self._original is None or self._src_path is None:
@@ -2152,6 +2294,17 @@ class WhiteFloodApp(ctk.CTk):
         if mask.getbbox() is None:
             messagebox.showwarning(APP_NAME, "Gambar area watermark dulu sebelum proses.")
             return
+
+        if not LamaInpaintService.model_available():
+            answer = messagebox.askyesno(
+                APP_NAME,
+                "Model AI LaMa belum tersedia di komputer ini.\n\n"
+                "Apakah kamu ingin mengunduhnya sekarang?\n"
+                "Ukuran model sekitar 88 MB dan membutuhkan internet.",
+            )
+            if not answer:
+                self.status_text.set("Pengunduhan model dibatalkan pengguna.")
+                return
 
         self._release_rembg_session()
         self._processing = True
@@ -2164,13 +2317,10 @@ class WhiteFloodApp(ctk.CTk):
         output_path = self._new_video_temp_output() if kind == WATERMARK_VIDEO else None
         self._show_active_surface()
         self._update_button_states()
-        self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
-        self.spinner_frame.lift()
-        self.spinner.start()
-        self.spinner_label.configure(text="Menghapus watermark...")
+        self._show_processing_overlay("Menghapus watermark...", percent=0)
         self.progress_phase_var.set("Remove Watermark")
-        self.progress_percent_var.set("Menyiapkan")
-        self.progress.set(0.15)
+        self.progress_percent_var.set("0%")
+        self.progress.set(0.01)
         self.status_text.set("Memproses area mask secara lokal...")
 
         def progress_cb(completed, total):
@@ -2179,9 +2329,23 @@ class WhiteFloodApp(ctk.CTk):
                 lambda done=completed, count=total: self._on_video_progress(done, count),
             )
 
+        def image_progress_cb(completed, total):
+            self.after(
+                0,
+                lambda done=completed, count=total: self._on_image_progress(done, count),
+            )
+
         def worker():
             try:
-                if self._lama_service is None:
+                if not LamaInpaintService.model_available():
+                    LamaInpaintService.download_model(
+                        cancel_event=self._cancel_event,
+                        status_cb=lambda event: self.after(
+                            0,
+                            lambda value=event: self._apply_status_event(value, TOOL_WATERMARK, 0),
+                        ),
+                    )
+                if self._lama_service is None or not self._lama_service.model_path.is_file():
                     self._lama_service = LamaInpaintService()
                 if kind == WATERMARK_VIDEO:
                     result = VideoProcessor(inpaint_service=self._lama_service).process(
@@ -2196,6 +2360,7 @@ class WhiteFloodApp(ctk.CTk):
                         source,
                         mask,
                         cancel_event=self._cancel_event,
+                        progress_cb=image_progress_cb,
                     )
             except Exception as exc:
                 self.after(0, lambda error=str(exc): self._on_feature_err(error, TOOL_WATERMARK))
@@ -2205,8 +2370,8 @@ class WhiteFloodApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_watermark_ok(self, result, kind):
-        self.spinner.stop()
-        self.spinner_frame.place_forget()
+        self.spinner.set_progress(100)
+        self._hide_processing_overlay()
         self._processing = False
         if kind == WATERMARK_VIDEO:
             self._video_result = result
@@ -2234,8 +2399,7 @@ class WhiteFloodApp(ctk.CTk):
         self._update_button_states()
 
     def _on_feature_err(self, error, tool):
-        self.spinner.stop()
-        self.spinner_frame.place_forget()
+        self._hide_processing_overlay()
         self._processing = False
         if tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO:
             self._cleanup_video_temp()
@@ -2291,21 +2455,17 @@ class WhiteFloodApp(ctk.CTk):
                 self.progress.set(0)
                 return
 
-        self.spinner_frame.place(relx=0.5, rely=0.5, anchor="center")
-        self.spinner_frame.lift()
-        self.spinner.start()
-
         if tool == TOOL_UPSCALE:
-            self.spinner_label.configure(text=f"Memperbesar foto ({scale}x)...")
+            self._show_processing_overlay(f"Memperbesar foto ({scale}x)...", percent=0)
             self.status_text.set(f"Memperbesar foto ({scale}x)... [RAM: {get_process_memory_mb()} MB]")
             self.progress_phase_var.set(f"Upscale {scale}x")
         else:
-            self.spinner_label.configure(text="Menghapus background...")
+            self._show_processing_overlay("Menghapus background...", percent=0)
             self.status_text.set(f"Menghapus background ({mode})... [RAM: {get_process_memory_mb()} MB]")
             self.progress_phase_var.set("Remove Background")
 
-        self.progress.set(0.15)
-        self.progress_percent_var.set("Menyiapkan")
+        self.progress.set(0.01)
+        self.progress_percent_var.set("0%")
 
         th = self.threshold_var.get()
         fr = self.fringe_var.get()
@@ -2317,7 +2477,7 @@ class WhiteFloodApp(ctk.CTk):
 
         def _worker():
             try:
-                self.after(0, lambda: self.progress.set(0.4))
+                self.after(0, lambda: (self.progress.set(0.15), self.spinner.set_progress(15)))
 
                 if tool == TOOL_UPSCALE:
                     result = upscale_image_alpha_safe(self._original, scale=scale, status_cb=_status_cb)
@@ -2329,7 +2489,9 @@ class WhiteFloodApp(ctk.CTk):
                             status_cb=_status_cb,
                         )
                     else:
+                        _status_cb(25.0)
                         result = flood_remove_bg(self._original, th, fr, es, ag)
+                        _status_cb(100.0)
 
                 self._result = result
                 self.after(0, lambda: self._on_process_ok())
@@ -2342,8 +2504,8 @@ class WhiteFloodApp(ctk.CTk):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _on_process_ok(self):
-        self.spinner.stop()
-        self.spinner_frame.place_forget()
+        self.spinner.set_progress(100)
+        self._hide_processing_overlay()
 
         self._processing = False
         self.progress.set(1.0)
@@ -2374,8 +2536,7 @@ class WhiteFloodApp(ctk.CTk):
             )
 
     def _on_process_err(self, err):
-        self.spinner.stop()
-        self.spinner_frame.place_forget()
+        self._hide_processing_overlay()
 
         self._processing = False
         self.progress.set(0)
@@ -2587,6 +2748,7 @@ class WhiteFloodApp(ctk.CTk):
         self._cancel_event.clear()
         self._update_button_states()
         self.btn_cancel_batch.configure(state="normal", fg_color=C["red"])
+        self._show_processing_overlay("Memproses batch...", percent=0)
 
         def _batch_status(event):
             self.after(
@@ -2636,14 +2798,18 @@ class WhiteFloodApp(ctk.CTk):
             f"Memproses {idx}/{total}: {src_name} -> {dst_name} [RAM: {get_process_memory_mb()} MB]"
         )
         self.progress.set(idx / total)
+        self.spinner.set_progress((idx / total) * 100)
         self.progress_phase_var.set(f"Batch {idx}/{total}")
         self.progress_percent_var.set(f"{int((idx / total) * 100)}%")
 
     def _batch_done(self, ok, total, errors, cancelled=False):
         if self._closing:
+            self._hide_processing_overlay()
             self._processing = False
             self._finish_close()
             return
+        self.spinner.set_progress(100 if not cancelled else 0)
+        self._hide_processing_overlay()
         self.progress.set(0)
         self.progress_percent_var.set("0%")
         self._processing = False

@@ -18,8 +18,9 @@ class _MaskOperation:
 class MaskCanvas(ctk.CTkFrame):
     """Canvas that keeps mask coordinates in original-image pixels."""
 
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent, change_callback=None, **kwargs):
         super().__init__(parent, fg_color="#10151a", **kwargs)
+        self._change_callback = change_callback
         self.canvas = tk.Canvas(
             self,
             bg="#10151a",
@@ -56,6 +57,7 @@ class MaskCanvas(ctk.CTkFrame):
             self._history = []
             self._redo_stack = []
             self._render()
+            self._notify_change()
             return
         if not isinstance(image, Image.Image):
             raise TypeError("MaskCanvas membutuhkan PIL.Image.")
@@ -66,6 +68,7 @@ class MaskCanvas(ctk.CTkFrame):
         self._redo_stack = []
         self._zoom = 1.0
         self._schedule_render()
+        self._notify_change()
 
     def set_tool(self, tool):
         if tool not in {"brush", "rectangle", "eraser"}:
@@ -94,6 +97,7 @@ class MaskCanvas(ctk.CTkFrame):
         self._operations = []
         self._rebuild_mask()
         self._schedule_render()
+        self._notify_change()
 
     reset_mask = clear_mask
 
@@ -104,6 +108,7 @@ class MaskCanvas(ctk.CTkFrame):
         self._operations = self._history.pop()
         self._rebuild_mask()
         self._schedule_render()
+        self._notify_change()
 
     def redo(self):
         if not self._redo_stack:
@@ -112,6 +117,7 @@ class MaskCanvas(ctk.CTkFrame):
         self._operations = self._redo_stack.pop()
         self._rebuild_mask()
         self._schedule_render()
+        self._notify_change()
 
     def get_source_mask(self):
         if self._mask is None:
@@ -123,6 +129,10 @@ class MaskCanvas(ctk.CTkFrame):
 
     def region_count(self):
         return sum(1 for operation in self._operations if operation.kind in {"brush", "rectangle"})
+
+    def _notify_change(self):
+        if self._change_callback is not None:
+            self._change_callback()
 
     def _on_resize(self, _event):
         self._schedule_render()
@@ -255,6 +265,7 @@ class MaskCanvas(ctk.CTkFrame):
         self._redo_stack = []
         self._operations.append(operation)
         self._rebuild_mask()
+        self._notify_change()
 
     def _rebuild_mask(self):
         if self._image is None:

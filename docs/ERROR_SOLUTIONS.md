@@ -214,3 +214,115 @@ VTracer runtime dan FFmpeg Windows bundle belum dijalankan, jadi keberhasilan en
 - `review-temp/WhiteFlood_BG_Remover_App/features/vectorize/service.py`
 - `review-temp/WhiteFlood_BG_Remover_App/features/watermark/video.py`
 - `tests/test_features.py`
+
+## ERR-004 - Tombol Process Watermark tetap disabled setelah mask digambar
+
+Tanggal: 2026-08-10
+Versi: 2.5.0
+Area: UI | Remove Watermark
+Status: Diperbaiki
+
+### Gejala
+
+Canvas sudah menampilkan overlay mask merah setelah brush dipakai, tetapi tombol `Process Image` tetap abu-abu dan tidak bisa ditekan.
+
+### Root cause
+
+`MaskCanvas` memperbarui mask internal saat operasi selesai, tetapi tidak mengirim callback ke `WhiteFloodApp`. Akibatnya `_update_button_states()` hanya berjalan saat file/tool berubah, bukan setelah mask berubah.
+
+### Solusi
+
+- Menambahkan `change_callback` pada `MaskCanvas`.
+- Callback dipanggil setelah commit brush/rectangle/eraser, undo, redo, clear, dan set image.
+- `WhiteFloodApp` langsung menghitung ulang state tombol dan menampilkan jumlah region mask.
+
+### Perlindungan regresi
+
+Unittest kontrak memeriksa callback mask. GUI click test belum dijalankan.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile ...` lulus.
+- `python -m unittest discover -s tests -v` lulus dengan 9 test.
+
+### Batasan
+
+EXE baru dan klik manual pada canvas belum diuji pada GUI.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/features/watermark/mask_canvas.py`
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `tests/test_features.py`
+
+## ERR-005 - Model LaMa tidak ditemukan saat Remove Watermark
+
+Tanggal: 2026-08-10
+Versi: 2.5.0
+Area: Remove Watermark | Packaging
+Status: Diperbaiki
+
+### Gejala
+
+Saat proses Remove Watermark dijalankan dari EXE, aplikasi menampilkan `Model LaMa tidak ditemukan`.
+
+### Root cause
+
+Model LaMa belum tersedia di `assets/models/`, dan workflow watermark belum memiliki dialog persetujuan atau downloader aplikasi. Folder `_MEIPASS` pada one-file EXE juga bukan lokasi penyimpanan model user yang persisten.
+
+### Solusi
+
+- Menambahkan lookup model ke bundle/source lalu `%LOCALAPPDATA%\\WhiteFlood\\models`.
+- Menambahkan dialog konfirmasi sebelum download.
+- Menambahkan download ONNX resmi OpenCV Zoo ke file `.part`, progress byte, cancellation, validasi ukuran minimum, dan atomic replace.
+- Download berjalan di worker; terminal tidak dipakai untuk progress.
+
+### Perlindungan regresi
+
+Unittest fake downloader memeriksa progress byte, instalasi atomic, dan cleanup file `.part`.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile ...` lulus.
+- `python -m unittest discover -s tests -v` lulus dengan 9 test.
+- Download internet nyata, inferensi LaMa, dan GUI belum dijalankan.
+
+### Batasan
+
+Model baru akan diunduh saat user menyetujui dialog di EXE baru. Model tidak diunduh selama build ini.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/features/model_download.py`
+- `review-temp/WhiteFlood_BG_Remover_App/features/watermark/inpaint.py`
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `tests/test_features.py`
+
+## ERR-006 - Logo window tampak terlalu kecil
+
+Tanggal: 2026-08-10
+Versi: 2.5.0
+Area: UI | Packaging
+Status: Diperbaiki
+
+### Gejala
+
+Logo pada title bar dan header sidebar tampak kecil walaupun file logo berukuran besar.
+
+### Root cause
+
+Logo memiliki area transparan besar; alpha bounding box `logo.png` hanya sekitar bagian tengah gambar. `iconbitmap` memakai seluruh canvas sehingga mark terlihat mengecil pada ukuran icon Windows.
+
+### Solusi
+
+- Crop berbasis alpha bounding box saat runtime tanpa mengubah file asset asli.
+- Terapkan hasil crop ke `iconphoto` title bar.
+- Tampilkan mark crop yang sama di header sidebar dengan ukuran yang lebih terbaca.
+
+### Perlindungan regresi
+
+Ukuran dan alpha bounding box asset diperiksa secara read-only. Syntax check lulus; visual GUI belum dijalankan.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`

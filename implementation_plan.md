@@ -148,3 +148,27 @@ Status: Source implementation selesai; unit/static gate lulus; runtime gate menu
 - GUI smoke test dan screenshot dibanding visual board.
 - Build PyInstaller: selesai 2026-08-10; detail dicatat di `docs/WORKLOG.md`.
 - Resource-path, console, dan runtime smoke test EXE.
+
+## 2026-08-10 - Model confirmation, circular progress, dan logo icon
+
+Status: Source implementation dan build EXE selesai; GUI runtime gate pending.
+
+### Perubahan
+
+- Model LaMa dicari dari bundle/source lalu folder writable `%LOCALAPPDATA%\\WhiteFlood\\models`.
+- Missing model memunculkan dialog konfirmasi; download memakai worker, file `.part`, atomic replace, cancellation, dan progress `% + byte terunduh/total` di UI.
+- Remove Background mempertahankan prompt rembg dan adapter progress byte; Upscale, Vectorize, Remove Watermark Image/Video, serta batch memakai circular progress overlay.
+- Watermark Image melaporkan progress berdasarkan tile LaMa; video tetap berdasarkan frame; Vectorize memakai progress tahap karena VTracer tidak memberi persentase kontinu.
+- MaskCanvas mengirim callback setelah mask berubah agar tombol Process langsung aktif.
+- Logo title bar dan header sidebar di-crop berdasarkan alpha bounding box saat runtime agar mark tidak terlihat mengecil.
+
+### Gate aktual
+
+- `python -m py_compile ...` lulus.
+- `python -m unittest discover -s tests -v` lulus dengan 10 test.
+- `BUILD_EXE.bat` lulus dalam sekitar 3 menit 31 detik; EXE baru tersedia di `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`.
+
+### Gate pending
+
+- Download model nyata, GUI confirmation/progress, click Process Watermark, dan screenshot smoke test.
+- Runtime EXE, FFmpeg video pipeline, serta visual icon pada Windows.
