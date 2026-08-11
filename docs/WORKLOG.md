@@ -472,3 +472,72 @@ Status: source patch, test, build, smoke start EXE, push, dan release publik v2.
 
 - Rendering GUI serta unduhan penuh BiRefNet pada jaringan PC kantor belum
   diverifikasi dari environment ini.
+
+---
+
+## 2026-08-11 - Audit seluruh app dan persiapan release v2.6.3
+
+Status: implementasi, runtime smoke test source, build staging, dan smoke EXE
+selesai; publikasi GitHub dicatat setelah upload diverifikasi.
+
+### Perubahan
+
+- Menambahkan Truststore Windows dan fallback BITS/SystemDefault proxy untuk
+  download model pada jaringan kantor.
+- Menyatukan lokasi model checker dan `rembg` ke `%USERPROFILE%\.u2net`.
+- Menambahkan tombol `Pasang Model dari File` dengan verifikasi hash, copy
+  aman, atomic replace, dan pemakaian tanpa restart.
+- Mem-pin `rembg 2.0.78`, Pooch 1.9.0, Truststore 0.10.4, serta URL/hash model
+  LaMa OpenCV Zoo.
+- Mengubah progress download-verifikasi, Remove Background, Watermark,
+  Upscale, dan batch agar fase berikutnya tidak membuat angka mundur.
+- Mengubah build supaya `dist/` tidak dibersihkan seluruhnya dan menyediakan
+  output staging terisolasi.
+- Menaikkan versi aplikasi menjadi v2.6.3.
+
+### Bukti verifikasi source/runtime
+
+- Syntax check source, downloader, build script, dan test lulus.
+- `python -m unittest discover -s tests -v` lulus: 35 test.
+- `git diff --check` lulus; warning hanya normalisasi LF/CRLF Git.
+- Truststore runtime aktif.
+- BITS mengunduh fixture resmi OpenCV Zoo 7.313 byte dan selesai 100%.
+- BiRefNet-Massive 972.666.916 byte cocok dengan MD5 resmi dan berhasil
+  menjalankan inferensi nyata pada gambar 96x96: output RGBA, dimensi tetap,
+  alpha 0..255.
+- Real-ESRGAN Vulkan berhasil menjalankan Upscale 2x pada PNG transparan:
+  output RGBA 32x32, alpha 0..255, progress monotonik sampai 100%.
+- VTracer nyata menghasilkan SVG valid 482 byte dengan progress
+  10/25/85/100.
+- LaMa SHA-256 cocok dengan pointer LFS OpenCV Zoo; runtime Image 64x64 dan
+  Video 32x32 dua frame selesai, dimensi tetap, serta progress mencapai total.
+- GUI source berhasil dibuat; kontrol model tampil, lalu pergantian
+  White Background kembali ke Furniture Quality berhasil tanpa TclError.
+
+### Bukti build
+
+- Build awal staging gagal sebelum packaging karena path asset relatif ikut
+  berpindah ke folder spec. `build_exe.py` diperbaiki memakai path asset absolut.
+- Build kedua lulus, lalu source mendapat satu edge-case fix untuk transfer HTTP
+  tidak lengkap. Build final PyInstaller 6.21.0 lulus dalam 239,5 detik pada
+  Python 3.12.10.
+- Artifact final: `WhiteFlood_BG_Remover.exe`, 294.771.175 byte (281,12 MiB),
+  dibuat 2026-08-11 11:09:23.
+- SHA-256:
+  `470E8CD94B317D8F0AA4489EF49E7CFD0480AEE67C4861402FCD1D00A708C97F`.
+- Archive inspection membuktikan FFmpeg/FFprobe, Real-ESRGAN NCNN,
+  rembg 2.0.78, Truststore 0.10.4, dan VTracer 0.6.15 masuk bundle.
+- Smoke start EXE selama 15 detik lulus; proses responsif dan ditutup setelah
+  pemeriksaan.
+- Salinan lokal versioned disimpan sebagai
+  `dist/WhiteFlood_BG_Remover-v2.6.3.exe`; EXE dan ZIP v2.6.2 tidak dihapus.
+
+### Gate yang masih berjalan
+
+- Commit, push branch, upload release, dan pencocokan digest GitHub.
+
+### Batas verifikasi
+
+- Jaringan/proxy PC kantor tidak tersedia di laptop build. Auto fallback telah
+  diuji memakai BITS nyata, tetapi keberhasilan melewati policy kantor tetap
+  perlu dites pada PC tersebut.

@@ -197,18 +197,18 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 - `RUN_APP.vbs` memilih EXE di `dist` bila tersedia; jika belum ada, launcher memakai `pythonw.exe` untuk source agar console tidak muncul.
 - Aset logo, folder `realesrgan`, metadata package, dan dependency runtime dikumpulkan ke bundle.
 - Folder `assets/` dan `ffmpeg/` menjadi resource path development/`_MEIPASS`; LaMa dapat diunduh ke folder user writable, sedangkan `ffmpeg.exe`, `ffprobe.exe`, license, dan checksum sudah disertakan untuk build distribusi. Binary `.exe` ditrack dengan Git LFS.
-- Script build bersifat destruktif terhadap `build/`, `dist/`, dan file `.spec`; target harus diperiksa sebelum dijalankan.
+- Script build membersihkan `build/` dan file `.spec`, tetapi mempertahankan file lain di `dist/`. Build release dapat diarahkan ke staging terisolasi melalui environment variable khusus WhiteFlood.
 
 Build release terakhir yang dicek:
 
 - Command: `python build_exe.py` dengan konfigurasi PyInstaller one-file windowed.
-- Output: `WhiteFlood_BG_Remover.exe` untuk release `v2.6.2`, 294,709,318 bytes, dibuat 2026-08-11 09:33:56.
+- Output: `WhiteFlood_BG_Remover.exe` untuk release `v2.6.3`, 294,771,175 bytes, dibuat 2026-08-11 11:09:23.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `51DAE4515C8166AAA556F36EEDECB17F732F9851152524C4ABEEB6B440C826AB`.
-- Release URL: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.2`.
-- Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
+- SHA-256: `470E8CD94B317D8F0AA4489EF49E7CFD0480AEE67C4861402FCD1D00A708C97F`.
+- Release URL target: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3`.
+- Dependency build: rembg 2.0.78, Pooch 1.9.0, Truststore 0.10.4, VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
-- Smoke start EXE selama 15 detik lulus. Rendering GUI dan unduhan penuh model belum diuji; warning build tetap mencatat unresolved `tbb12.dll` dari optional dependency numba.
+- Smoke start EXE v2.6.3 selama 15 detik lulus dan proses responsif. GUI source construction serta pergantian White Background ke mode AI lulus. Warning build tetap mencatat unresolved `tbb12.dll` dari optional dependency numba; engine aktual yang dipakai workflow sudah lolos smoke runtime terpisah.
 
 ## Aturan arsitektur yang dikunci
 
@@ -230,4 +230,54 @@ Build release terakhir yang dicek:
 - renderer SVG native Windows atau node editor;
 - benchmark RAM lintas ukuran gambar dan mode AI;
 - validasi visual otomatis untuk kualitas tepi alpha;
-- runtime test dengan model LaMa, VTracer wheel, dan binary FFmpeg bundle.
+- pengujian proxy/firewall pada PC kantor yang mengalami masalah.
+
+## Patch arsitektur v2.6.3 - jaringan kantor dan progress terpadu
+
+### Resolusi dan instalasi model Remove Background
+
+- Saat proses WhiteFlood dimulai, `U2NET_HOME` dipaksa ke
+  `%USERPROFILE%\.u2net`. Checker UI, instalasi manual, dan `rembg` memakai
+  lokasi final yang sama walaupun PC memiliki `XDG_DATA_HOME` atau
+  `U2NET_HOME` dari kebijakan/environment lain.
+- `MODEL_CHECKSUM_DISABLED` dihapus dari environment proses WhiteFlood. Model
+  BiRefNet hanya dipasang bila nama target, ukuran minimum, dan MD5 resmi
+  `rembg 2.0.78` sesuai.
+- HTTPS mengaktifkan `truststore` sebelum Requests/Pooch diimpor agar validasi
+  TLS memakai certificate store Windows. Verifikasi sertifikat tidak
+  dinonaktifkan.
+- Jika Requests/Pooch gagal karena sertifikat, proxy, timeout, DNS, atau status
+  proxy yang dikenali, downloader beralih satu kali ke Windows BITS dengan
+  `SystemDefault` proxy dan credential proxy milik user Windows.
+- BITS menulis ke file unik `.part`, melaporkan byte asli, membatalkan job yang
+  stall, memverifikasi hash, lalu melakukan atomic replace. File parsial tidak
+  dapat dianggap sebagai model terpasang.
+- Tombol `Pasang Model dari File` menerima file ONNX bernama apa pun, menyalin
+  dan memverifikasinya di worker, lalu memasang ke nama final sesuai mode.
+  File sumber tidak dipindah atau diubah; model lama tidak ditimpa bila hash
+  file baru salah.
+
+### Kontrak progress lintas fitur
+
+- Download dan verifikasi model memakai rentang fase terpisah sehingga angka
+  tidak kembali dari 100% ke 0% saat hashing dimulai.
+- Download model sebagai subfase Remove Background/Watermark dipetakan ke
+  sebagian progress keseluruhan; 100% hanya berarti seluruh workflow selesai.
+- Output progress NCNN Upscale dapat reset per tile/stage. Adapter UI mengambil
+  angka terakhir pada satu baris dan menahan nilai tertinggi agar progress
+  tidak mundur.
+- Progress satu file pada batch dipetakan ke segmen global file tersebut.
+  Pergantian file tidak mereset bar ke 0%, dan batch yang selesai tetap 100%.
+- Vectorize, Watermark Image, dan Watermark Video mempertahankan callback
+  engine yang terukur. Fase tanpa total byte/frame tetap memakai status
+  indeterminate atau menahan progress terakhir.
+
+### Packaging
+
+- Release mem-pin `rembg[cpu]==2.0.78`, `pooch==1.9.0`, dan
+  `truststore==0.10.4`.
+- PyInstaller mengumpulkan package serta metadata Truststore.
+- `BUILD_EXE.bat` tidak lagi menghapus seluruh `dist/`; offline ZIP dan
+  artefak lain di folder tersebut dipertahankan.
+- `build_exe.py` menerima `WHITEFLOOD_DIST_PATH`, `WHITEFLOOD_WORK_PATH`, dan
+  `WHITEFLOOD_SPEC_PATH` untuk build staging terisolasi.

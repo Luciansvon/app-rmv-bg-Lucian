@@ -4,7 +4,14 @@ import subprocess
 import shutil
 
 
-ffmpeg_dir = os.path.join(os.path.dirname(__file__), "ffmpeg")
+app_dir = os.path.abspath(os.path.dirname(__file__))
+
+
+def bundled_data(source, destination):
+    return f"--add-data={os.path.join(app_dir, source)};{destination}"
+
+
+ffmpeg_dir = os.path.join(app_dir, "ffmpeg")
 required_ffmpeg_files = ("ffmpeg.exe", "ffprobe.exe")
 missing_ffmpeg_files = [
     name for name in required_ffmpeg_files
@@ -39,27 +46,41 @@ cmd = [
     "--clean",
     "--onefile",
     "--windowed",
-    "--icon=logo.ico",
-    "--add-data=logo.ico;.",
-    "--add-data=logo.png;.",
-    "--add-data=realesrgan;realesrgan",
-    "--add-data=assets;assets",
-    "--add-data=ffmpeg;ffmpeg",
+    f"--icon={os.path.join(app_dir, 'logo.ico')}",
+    bundled_data("logo.ico", "."),
+    bundled_data("logo.png", "."),
+    bundled_data("realesrgan", "realesrgan"),
+    bundled_data("assets", "assets"),
+    bundled_data("ffmpeg", "ffmpeg"),
     "--collect-all=customtkinter",
     "--collect-all=onnxruntime",
     "--collect-all=rembg",
+    "--collect-all=truststore",
     "--collect-all=pymatting",
     "--collect-all=vtracer",
     "--copy-metadata=pymatting",
+    "--copy-metadata=truststore",
     "--hidden-import=psutil",
     "--exclude-module=PyQt5",
     "--exclude-module=PyQt6",
     "--exclude-module=PySide2",
     "--exclude-module=PySide6",
     "--exclude-module=matplotlib",
-    "--name=WhiteFlood_BG_Remover",
-    "whiteflood_app.py",
 ]
+
+dist_path = os.environ.get("WHITEFLOOD_DIST_PATH")
+work_path = os.environ.get("WHITEFLOOD_WORK_PATH")
+spec_path = os.environ.get("WHITEFLOOD_SPEC_PATH")
+if dist_path:
+    cmd.extend(["--distpath", os.path.abspath(dist_path)])
+if work_path:
+    cmd.extend(["--workpath", os.path.abspath(work_path)])
+if spec_path:
+    cmd.extend(["--specpath", os.path.abspath(spec_path)])
+cmd.extend([
+    "--name=WhiteFlood_BG_Remover",
+    os.path.join(app_dir, "whiteflood_app.py"),
+])
 
 print("[INFO] Running PyInstaller build command:")
 print(" ".join(cmd))
@@ -69,7 +90,10 @@ if p.returncode != 0:
     print(f"[ERROR] PyInstaller failed with exit code {p.returncode}")
     sys.exit(p.returncode)
 
-exe_path = os.path.join("dist", "WhiteFlood_BG_Remover.exe")
+exe_path = os.path.join(
+    os.path.abspath(dist_path) if dist_path else "dist",
+    "WhiteFlood_BG_Remover.exe",
+)
 if os.path.exists(exe_path):
     size_mb = os.path.getsize(exe_path) / (1024 * 1024)
     print(f"\n========================================")

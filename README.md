@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.2"><img src="https://img.shields.io/github/v/release/Luciansvon/app-rmv-bg-Lucian?label=latest%20release" alt="Latest release"></a>
+  <a href="https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3"><img src="https://img.shields.io/github/v/release/Luciansvon/app-rmv-bg-Lucian?label=latest%20release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="Windows">
   <img src="https://img.shields.io/badge/processing-local%20first-2E8B57" alt="Local-first processing">
 </p>
@@ -63,7 +63,7 @@ WhiteFlood is a local-first desktop workbench for furniture/catalog media. It ke
 
 For the easiest setup, download the Windows executable from the latest release:
 
-**[Download WhiteFlood v2.6.2](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.6.2/WhiteFlood_BG_Remover.exe)**
+**[Download WhiteFlood v2.6.3](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.6.3/WhiteFlood_BG_Remover.exe)**
 
 The release asset is a one-file, windowed build. Python is not required for the release executable. On first use, missing AI models are confirmed and downloaded to the user model folder with progress shown inside the app. Vectorize uses the bundled VTracer package and does not download an AI model.
 
@@ -71,7 +71,7 @@ The release asset is a one-file, windowed build. Python is not required for the 
 
 ## Spesifikasi device minimum
 
-Angka di bawah adalah baseline praktis untuk release v2.6.2, bukan hasil benchmark lintas semua tipe komputer.
+Angka di bawah adalah baseline praktis untuk release v2.6.3, bukan hasil benchmark lintas semua tipe komputer.
 
 | Komponen | Minimum / catatan |
 |---|---|
@@ -99,16 +99,18 @@ Jika semua mode AI dipakai setidaknya sekali, file model yang perlu tersedia ada
 - Model `rembg` disimpan di `%USERPROFILE%\\.u2net`.
 - Model LaMa disimpan di `%LOCALAPPDATA%\\WhiteFlood\\models`.
 - Model Upscale tidak diunduh saat pertama kali dipakai. `realesrgan-x4plus` sudah dibundel di EXE; seluruh file model Real-ESRGAN yang ada di bundle berjumlah sekitar 46.27 MB (44.12 MiB).
-- Ukuran EXE release v2.6.2 adalah 281.06 MiB (294,709,318 bytes). Kebutuhan dasar setelah semua model terunduh tetap sekitar **4.28 GB (3.99 GiB)**, belum termasuk file input, output, dan file sementara.
+- Ukuran EXE release v2.6.3 adalah 281.12 MiB (294,771,175 bytes). Kebutuhan dasar setelah semua model terunduh tetap sekitar **4.28 GB (3.99 GiB)**, belum termasuk file input, output, dan file sementara.
 
 ### Jika unduhan model tidak bergerak
 
-- Saat aplikasi masih menghubungkan server, progress bergerak tanpa angka persen palsu.
-- Persentase dan ukuran baru tampil setelah server mulai mengirim data.
+- WhiteFlood memakai certificate store Windows dan otomatis mencoba BITS dengan proxy Windows/SystemDefault jika koneksi HTTPS Python gagal.
+- Saat aplikasi masih menghubungkan server, progress bergerak tanpa angka persen palsu. Persentase dan ukuran baru tampil setelah server mulai mengirim data.
 - Model Remove Background disimpan di `%USERPROFILE%\\.u2net`, bukan folder Downloads browser.
-- Jika jaringan kantor memblokir GitHub, minta admin mengizinkan `github.com` dan `release-assets.githubusercontent.com`, lalu klik `Proses Ulang`.
+- WhiteFlood memaksa engine dan pemeriksa model memakai folder yang sama, sehingga environment variable kantor tidak mengarahkan `rembg` ke lokasi lain.
+- Jika jalur HTTPS dan BITS sama-sama diblokir, pilih mode Remove Background lalu klik **Pasang Model dari File**. WhiteFlood memeriksa hash, menyalin, dan memberi nama file secara otomatis; model langsung siap dipakai tanpa restart.
+- Jika kebijakan kantor memblokir GitHub untuk semua aplikasi, minta admin mengizinkan `github.com`, `release-assets.githubusercontent.com`, `raw.githubusercontent.com`, dan `media.githubusercontent.com`.
 
-Untuk memantau ukuran file lewat PowerShell tanpa mengubah file, jalankan:
+Untuk memantau ukuran file lewat terminal tanpa mengubah file, buka tab **Windows PowerShell** (prompt diawali `PS`), bukan Command Prompt/CMD, lalu jalankan:
 
 ```powershell
 while ($true) {
@@ -123,7 +125,7 @@ Tekan `Ctrl+C` untuk berhenti. Jika `UkuranMB` terus bertambah, unduhan masih be
 
 ### Instal model secara offline untuk PC kantor strict
 
-Kalau download GitHub dilarang oleh kebijakan kantor, jangan mematikan firewall. Download atau ambil model dari PC lain yang diizinkan, cek hash, lalu pindahkan memakai media yang disetujui admin kantor.
+Kalau download GitHub dilarang oleh kebijakan kantor, jangan mematikan firewall. Download atau ambil model dari PC lain yang diizinkan, pindahkan memakai media yang disetujui admin kantor, lalu gunakan tombol **Pasang Model dari File** di aplikasi. Nama file sumber bebas; WhiteFlood akan memeriksa hash dan memasangnya ke nama/lokasi yang benar.
 
 | Mode aplikasi | Nama file tujuan | MD5 rembg 2.0.78 |
 |---|---|---|
@@ -142,7 +144,7 @@ Get-FileHash "$env:USERPROFILE\.u2net\birefnet-massive.onnx" -Algorithm MD5
 
 Hasil MD5 harus persis `33e726a2136a3d59eb0fdf613e31e3e9`. Jika berbeda, jangan dipakai karena file salah atau rusak. WhiteFlood akan memakai file valid tersebut secara lokal tanpa download ulang.
 
-Angka model Remove Background mengikuti model yang dipakai `rembg` 2.0.78 saat audit pada 2026-08-10. Dependency di `requirements.txt` masih mengizinkan versi `rembg` yang lebih baru, sehingga ukuran model bisa berubah pada versi mendatang.
+Angka model Remove Background mengikuti model yang dipakai `rembg` 2.0.78. Dependency release dipin ke versi tersebut agar nama, ukuran, dan hash model tetap konsisten.
 
 ## Run from source
 
@@ -165,7 +167,7 @@ From `review-temp/WhiteFlood_BG_Remover_App`:
 .\BUILD_EXE.bat
 ```
 
-The build uses PyInstaller `--onefile --windowed` and writes the executable to `dist/WhiteFlood_BG_Remover.exe`. The build script cleans the local `build/`, `dist/`, and generated `.spec` file before rebuilding.
+The build uses PyInstaller `--onefile --windowed` and writes the executable to `dist/WhiteFlood_BG_Remover.exe`. The build script cleans the local `build/` and generated `.spec` file before rebuilding; file lain yang sudah ada di `dist/` tetap dipertahankan.
 
 ## Output contract
 

@@ -6,7 +6,7 @@
 
 <p align="center">Windows desktop processing tools for furniture product photos and catalogs.</p>
 
-<p align="center"><strong>Version 2.6.1</strong> · Built by Bima Chakti</p>
+<p align="center"><strong>Version 2.6.3</strong> · Built by Bima Chakti</p>
 
 ## What it does
 
@@ -45,7 +45,7 @@ No unintended crop or resize is allowed.
 
 ## Download the release
 
-Download the standalone Windows executable from the [WhiteFlood v2.6.1 release](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1). The release executable does not require Python. AI background-removal models may be downloaded once on first use, with progress displayed in the app.
+Download the standalone Windows executable from the [WhiteFlood v2.6.3 release](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3). The release executable does not require Python. AI background-removal models may be downloaded once on first use, with progress displayed in the app. On strict office networks, WhiteFlood uses the Windows certificate store and automatically falls back to Windows BITS/system proxy. A verified model file can also be installed from the Remove Background sidebar without using a terminal.
 
 ## Run from source
 
@@ -68,7 +68,7 @@ Double-click `BUILD_EXE.bat`. The script creates a PyInstaller `--onefile --wind
 dist/WhiteFlood_BG_Remover.exe
 ```
 
-The build script cleans the local `build/`, `dist/`, and generated `.spec` file before rebuilding.
+The build script cleans the local `build/` and generated `.spec` file before rebuilding. Other files already stored in `dist/` are preserved.
 
 ## Supported input files
 

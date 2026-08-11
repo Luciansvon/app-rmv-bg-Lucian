@@ -20,11 +20,37 @@ import tempfile
 from pathlib import Path
 from collections import deque
 
+# WhiteFlood documents and installs rembg models in this exact user folder.
+# Pin rembg to the same path inside this process so office environment variables
+# cannot make the checker and the AI engine look in different locations.
+WHITEFLOOD_REMBG_HOME = Path.home() / ".u2net"
+os.environ["U2NET_HOME"] = str(WHITEFLOOD_REMBG_HOME)
+os.environ.pop("MODEL_CHECKSUM_DISABLED", None)
+
+# Use the signed-in Windows user's certificate store before any HTTPS client is
+# imported. This keeps TLS verification enabled on office networks that inspect
+# HTTPS with an enterprise root certificate.
+SYSTEM_TRUST_ACTIVE = False
+SYSTEM_TRUST_ERROR = None
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+    SYSTEM_TRUST_ACTIVE = True
+except Exception as exc:
+    SYSTEM_TRUST_ERROR = str(exc)
+
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageFilter, ImageDraw, ImageTk
 import numpy as np
 
+from features.model_download import (
+    ModelDownloadError,
+    download_with_bits,
+    install_model_file,
+    should_try_windows_fallback,
+)
 from features.vectorize import VectorizeError, VectorizeService, preset_names
 from features.performance import (
     PROCESSING_BALANCED,
@@ -89,18 +115,77 @@ def format_duration(seconds):
     minutes, secs = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
+
+def next_upscale_progress(previous, reported, scale):
+    """Keep NCNN stage/tile progress monotonic for the app UI."""
+    previous = max(0.0, min(100.0, float(previous or 0)))
+    reported = max(0.0, min(100.0, float(reported or 0)))
+    mapped = reported if int(scale) != 8 else min(95.0, reported * 0.95)
+    return max(previous, mapped)
+
+
+def map_progress_event(event, start_percent, end_percent):
+    """Map a measurable sub-phase into one stable part of an overall process."""
+    start = max(0.0, min(100.0, float(start_percent)))
+    end = max(start, min(100.0, float(end_percent)))
+    span = end - start
+    if isinstance(event, dict) and event.get("kind") in {
+        "model_download", "phase_progress"
+    }:
+        local = max(0.0, min(100.0, float(event.get("percent", 0) or 0)))
+        result = dict(event)
+        result["percent"] = int(round(start + (local / 100.0) * span))
+        return result
+    if isinstance(event, (int, float)):
+        local = max(0.0, min(100.0, float(event)))
+        return start + (local / 100.0) * span
+    return event
+
+
+def map_batch_progress_event(event, index, total):
+    """Map one file's 0..100 progress into its global batch segment."""
+    total = max(1, int(total or 1))
+    index = max(1, min(total, int(index or 1)))
+    base = ((index - 1) / total) * 100.0
+    span = 100.0 / total
+    prefix = f"Batch {index}/{total}"
+
+    if isinstance(event, dict):
+        kind = event.get("kind")
+        if kind in {"model_download", "phase_progress"}:
+            local_percent = max(0.0, min(100.0, float(event.get("percent", 0) or 0)))
+            mapped = int(round(base + (local_percent / 100.0) * span))
+            result = dict(event)
+            result["percent"] = mapped
+            if kind == "model_download":
+                phase = str(result.get("phase") or "Menyiapkan model AI...")
+                result["phase"] = f"{prefix} · {phase}"
+            else:
+                message = str(result.get("message") or "Memproses...")
+                result["message"] = f"{prefix} · {message}"
+            return result
+        if kind == "phase_indeterminate":
+            message = str(event.get("message") or "Memproses...")
+            return {
+                "kind": "phase_progress",
+                "percent": int(round(base)),
+                "message": f"{prefix} · {message}",
+            }
+
+    if isinstance(event, (int, float)):
+        local_percent = max(0.0, min(100.0, float(event)))
+        return base + (local_percent / 100.0) * span
+
+    return {
+        "kind": "phase_progress",
+        "percent": int(round(base)),
+        "message": f"{prefix} · {event}",
+    }
+
 # ── Helper to check if model is already downloaded ──────
 def is_model_downloaded(model_name):
-    u2net_dir = Path.home() / ".u2net"
-    if not u2net_dir.exists():
-        return False
-    target = u2net_dir / f"{model_name}.onnx"
-    if target.exists() and target.stat().st_size > 1_000_000:
-        return True
-    for f in u2net_dir.glob("*.onnx"):
-        if model_name in f.name and f.stat().st_size > 1_000_000:
-            return True
-    return False
+    target = WHITEFLOOD_REMBG_HOME / f"{model_name}.onnx"
+    return target.is_file() and target.stat().st_size >= REMBG_MODEL_MINIMUM_BYTES
 
 # ── Filename Sanitization for Windows ────────────────────
 def sanitize_filename(name):
@@ -124,7 +209,7 @@ _rembg_session_threads = None
 # ═══════════════════════════════════════════════════════════
 
 APP_NAME = "WhiteFlood BG Remover"
-VERSION = "2.6.2"
+VERSION = "2.6.3"
 DEVELOPER_CREDIT = "Built by Bima Chakti\n\u00a9 2026 Bima Chakti"
 
 TOOL_WORKSPACE = "workspace"
@@ -168,6 +253,13 @@ MODEL_LOAD_PHASE = "Memverifikasi unduhan dan memuat model AI lokal..."
 MODEL_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 MODEL_CONNECT_TIMEOUT_SECONDS = 15
 MODEL_READ_TIMEOUT_SECONDS = 30
+REMBG_MODEL_MINIMUM_BYTES = 900_000_000
+REMBG_MODEL_HASHES = {
+    "birefnet-massive": "md5:33e726a2136a3d59eb0fdf613e31e3e9",
+    "birefnet-general": "md5:7a35a0141cbbc80de11d9c9a28f52697",
+    "birefnet-portrait": "md5:c3a64a6abf20250d090cd055f12a3b67",
+    "birefnet-hrsod": "md5:c017ade5de8a50ff0fd74d790d268dda",
+}
 AGGRESSIVE_THRESHOLD_RELAXATION = 20
 
 C = {
@@ -630,7 +722,9 @@ def _friendly_model_download_error(model_name, error):
             "Cek koneksi internet. Jika memakai jaringan kantor, minta admin mengizinkan "
             "github.com dan release-assets.githubusercontent.com pada firewall/proxy, lalu klik "
             "'Proses Ulang'.\n\n"
-            f"Folder model: {Path.home() / '.u2net'}\n"
+            "WhiteFlood sudah mencoba jalur HTTPS biasa dan jalur Windows kantor. "
+            "Jika keduanya diblokir, klik 'Pasang Model dari File' di sidebar.\n\n"
+            f"Folder model: {WHITEFLOOD_REMBG_HOME}\n"
             "Cek lewat PowerShell: Get-ChildItem \"$env:USERPROFILE\\.u2net\" -Force\n"
             f"Detail teknis: {detail}"
         )
@@ -662,7 +756,8 @@ class _UiEventQueue:
 #  AI Background Removal Engine
 # ═══════════════════════════════════════════════════════════
 
-def _get_rembg_session(model_name="birefnet-massive", status_cb=None, onnx_threads=None):
+def _get_rembg_session(model_name="birefnet-massive", status_cb=None,
+                       onnx_threads=None, cancel_event=None):
     """Lazy-load rembg and cache session with ONNX SessionOptions to prevent 12GB RAM arenas."""
     global _rembg_session, _rembg_model_name, _rembg_session_threads
     selected_threads = max(1, int(onnx_threads)) if onnx_threads else None
@@ -696,7 +791,7 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None, onnx_threa
         opts.intra_op_num_threads = selected_threads
         opts.inter_op_num_threads = 1
 
-    max_retries = 3
+    max_retries = 1 if os.name == "nt" else 3
     last_err = None
 
     for attempt in range(1, max_retries + 1):
@@ -726,7 +821,35 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None, onnx_threa
                             MODEL_READ_TIMEOUT_SECONDS,
                         ),
                     )
-                result = original_retrieve(*args, **kwargs)
+                try:
+                    result = original_retrieve(*args, **kwargs)
+                except Exception as primary_error:
+                    if not should_try_windows_fallback(primary_error):
+                        raise
+                    url = args[0] if args else kwargs.get("url")
+                    known_hash = args[1] if len(args) > 1 else kwargs.get("known_hash")
+                    filename = kwargs.get("fname") or Path(str(url)).name
+                    model_dir = Path(kwargs.get("path") or WHITEFLOOD_REMBG_HOME)
+                    destination = model_dir / filename
+                    if status_cb:
+                        status_cb(_model_phase(
+                            "Koneksi biasa gagal. Mencoba jalur Windows kantor..."
+                        ))
+                    try:
+                        result = str(download_with_bits(
+                            url,
+                            destination,
+                            known_hash=known_hash,
+                            minimum_bytes=REMBG_MODEL_MINIMUM_BYTES,
+                            status_cb=status_cb,
+                            cancel_event=cancel_event,
+                            label=model_name,
+                        ))
+                    except ModelDownloadError as bits_error:
+                        raise RuntimeError(
+                            f"Download HTTPS gagal: {primary_error}. "
+                            f"Jalur Windows juga gagal: {bits_error}"
+                        ) from bits_error
                 if status_cb:
                     status_cb(_model_phase(MODEL_LOAD_PHASE))
                 return result
@@ -811,7 +934,8 @@ def refine_alpha_mask(alpha_img, edge_smooth=0, erode_size=0):
 
 
 def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive",
-                 alpha_matting=False, status_cb=None, processing_profile=None):
+                 alpha_matting=False, status_cb=None, processing_profile=None,
+                 cancel_event=None):
     """Remove background using neural network preserving exact pixel dimensions."""
     if not REMBG_OK:
         raise RuntimeError(
@@ -827,11 +951,19 @@ def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive"
     if status_cb:
         status_cb(_model_phase(MODEL_PREPARE_PHASE))
     profile = get_processing_profile(processing_profile) if processing_profile else None
+
+    def model_status(event):
+        if status_cb:
+            status_cb(map_progress_event(event, 0, 65))
+
     session = _get_rembg_session(
         model_name,
-        status_cb=status_cb,
+        status_cb=model_status if status_cb else None,
         onnx_threads=profile.onnx_threads if profile else None,
+        cancel_event=cancel_event,
     )
+    if cancel_event is not None and cancel_event.is_set():
+        raise RuntimeError("Pengunduhan model dibatalkan.")
     if status_cb:
         status_cb({
             "kind": "phase_indeterminate",
@@ -1030,13 +1162,19 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None, processing_profile=No
 
             progress_pattern = re.compile(r'(\d+(?:\.\d+)?)%')
             stderr_logs = []
+            last_progress = 0.0
 
             for line in proc.stderr:
                 stderr_logs.append(line)
-                match = progress_pattern.search(line)
-                if match and status_cb:
-                    pct = float(match.group(1))
-                    status_cb(pct if scale != 8 else min(95.0, pct * 0.95))
+                matches = progress_pattern.findall(line)
+                if matches and status_cb:
+                    reported = float(matches[-1])
+                    # NCNN can reset its own counter for another tile/stage.
+                    # UI progress must reflect real reports without moving backward.
+                    next_progress = next_upscale_progress(last_progress, reported, scale)
+                    if next_progress > last_progress:
+                        last_progress = next_progress
+                        status_cb(last_progress)
 
             proc.wait()
         except subprocess.TimeoutExpired:
@@ -1104,7 +1242,8 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None, processing_profile=No
 
 def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
                  model_name="birefnet-massive", alpha_matting=False, erode_size=0,
-                 tool=TOOL_REMOVE_BG, scale=2, status_cb=None, processing_profile=None):
+                 tool=TOOL_REMOVE_BG, scale=2, status_cb=None,
+                 processing_profile=None, cancel_event=None):
     """Process a single file preserving rules for Remove BG or Upscale."""
     src, dst = Path(src), Path(dst)
     with Image.open(src) as img:
@@ -1128,6 +1267,7 @@ def process_file(src, dst, mode, threshold, fringe, edge_smooth, aggressive,
                     model_name=model_name, alpha_matting=alpha_matting,
                     status_cb=status_cb,
                     processing_profile=processing_profile,
+                    cancel_event=cancel_event,
                 )
             expected_size = original_size
 
@@ -1417,6 +1557,18 @@ class WhiteFloodApp(ctk.CTk):
             text_color=C["dim"], wraplength=260, justify="left",
         )
         self.mode_desc.pack(anchor="w", pady=(0, 8))
+        self._update_mode_desc()
+
+        self.btn_install_rembg_model = ctk.CTkButton(
+            self.frame_rmbg_settings,
+            text="Pasang Model dari File",
+            command=self._install_rembg_model_from_file,
+            fg_color=C["blue"], hover_color=C["blue_hover"],
+            text_color=C["text"],
+            font=ctk.CTkFont(size=10, weight="bold"),
+            height=30, corner_radius=6,
+        )
+        self.btn_install_rembg_model.pack(fill="x", pady=(0, 8))
         self._update_mode_desc()
 
         self.lbl_refine = self._section_label(self.frame_rmbg_settings, "KONTROL TEPI")
@@ -1976,10 +2128,19 @@ class WhiteFloodApp(ctk.CTk):
         mode = self.mode_var.get()
         desc = MODE_DESC_MAP.get(mode, "")
         self.mode_desc.configure(text=desc)
+        if hasattr(self, "btn_install_rembg_model") and mode != MODE_WHITE:
+            model_name = MODE_MAP.get(mode, "birefnet-massive")
+            label = (
+                "Ganti / Verifikasi Model dari File"
+                if is_model_downloaded(model_name)
+                else "Pasang Model dari File"
+            )
+            self.btn_install_rembg_model.configure(text=label)
 
     def _toggle_flood_settings(self):
         is_flood = self.mode_var.get() == MODE_WHITE
         if is_flood:
+            self.btn_install_rembg_model.pack_forget()
             self.lbl_refine.pack_forget()
             self.refine_dropdown.pack_forget()
             self.adv_section.pack(fill="x", pady=(0, 8))
@@ -1987,8 +2148,105 @@ class WhiteFloodApp(ctk.CTk):
             self.adv_section.pack_forget()
             if not self.lbl_refine.winfo_manager():
                 self.lbl_refine.pack(anchor="w", pady=(8, 4))
+            if not self.btn_install_rembg_model.winfo_manager():
+                self.btn_install_rembg_model.pack(
+                    fill="x", pady=(0, 8), before=self.lbl_refine
+                )
             if not self.refine_dropdown.winfo_manager():
                 self.refine_dropdown.pack(fill="x", pady=(0, 8))
+
+    def _install_rembg_model_from_file(self):
+        if self._processing or self.mode_var.get() == MODE_WHITE:
+            return
+        model_name = MODE_MAP.get(self.mode_var.get(), "birefnet-massive")
+        known_hash = REMBG_MODEL_HASHES.get(model_name)
+        if not known_hash:
+            messagebox.showerror(APP_NAME, f"Hash resmi model '{model_name}' belum tersedia.")
+            return
+        source = filedialog.askopenfilename(
+            title=f"Pilih file model untuk {model_name}",
+            filetypes=[("ONNX model", "*.onnx"), ("Semua file", "*.*")],
+        )
+        if not source:
+            return
+
+        destination = WHITEFLOOD_REMBG_HOME / f"{model_name}.onnx"
+        self._processing = True
+        self._cancel_event.clear()
+        self._start_process_timer()
+        self._update_button_states()
+        self._show_processing_overlay("Memeriksa file model...", percent=0)
+        self.progress_phase_var.set("Memeriksa model lokal")
+        self.progress_percent_var.set("0%")
+        self.status_text.set(
+            f"Memeriksa dan memasang {model_name}. File asli tidak diubah."
+        )
+
+        def status_cb(event):
+            self._post_ui_event(
+                lambda value=event: self._apply_status_event(
+                    value, TOOL_REMOVE_BG, self.scale_var.get()
+                )
+            )
+
+        def worker():
+            try:
+                installed = install_model_file(
+                    source,
+                    destination,
+                    known_hash=known_hash,
+                    minimum_bytes=REMBG_MODEL_MINIMUM_BYTES,
+                    status_cb=status_cb,
+                    label=model_name,
+                )
+                self._post_ui_event(
+                    lambda path=installed: self._on_manual_model_installed(model_name, path)
+                )
+            except Exception as exc:
+                self._post_ui_event(
+                    lambda error=str(exc): self._on_manual_model_install_error(error)
+                )
+
+        self._start_worker(worker, "whiteflood-model-install")
+
+    def _on_manual_model_installed(self, model_name, destination):
+        elapsed = self._stop_process_timer()
+        self._hide_processing_overlay()
+        self._processing = False
+        self.progress.set(1.0)
+        self.progress_phase_var.set("Model terpasang")
+        self.progress_percent_var.set("100%")
+        self.preview_state_var.set("SIAP  /  REMOVE BACKGROUND")
+        self._update_mode_desc()
+        self._update_button_states()
+        self.status_text.set(
+            f"Model {model_name} terpasang dan siap dipakai tanpa restart. "
+            f"{self._duration_text(elapsed)}."
+        )
+        messagebox.showinfo(
+            APP_NAME,
+            f"Model '{model_name}' berhasil diverifikasi dan dipasang.\n\n"
+            f"Lokasi: {destination}\n\n"
+            "Model langsung siap dipakai. Klik 'Proses Remove Background'.",
+        )
+
+    def _on_manual_model_install_error(self, error):
+        elapsed = self._stop_process_timer()
+        self._hide_processing_overlay()
+        self._processing = False
+        self.progress.set(0)
+        self.progress_phase_var.set("Model gagal dipasang")
+        self.progress_percent_var.set("0%")
+        self.preview_state_var.set("ERROR  /  MODEL TIDAK VALID")
+        self._update_button_states()
+        self.status_text.set(
+            f"Model gagal dipasang ({self._duration_text(elapsed)}): {error}"
+        )
+        messagebox.showerror(
+            APP_NAME,
+            "Model tidak dipasang. File lama tetap aman.\n\n"
+            f"{error}",
+        )
 
     def _start_process_timer(self):
         self._stop_process_timer(update_label=False)
@@ -2061,14 +2319,14 @@ class WhiteFloodApp(ctk.CTk):
             percent = int(event.get("percent", 0))
             downloaded = int(event.get("downloaded", 0) or 0)
             total = int(event.get("total", 0) or 0)
-            phase = f"Mengunduh model {model_name}"
+            phase = str(event.get("phase") or f"Mengunduh model {model_name}")
             self.progress_phase_var.set(phase)
             self.progress_percent_var.set(f"{percent}%")
             self._set_progress_mode("determinate")
             self.progress.configure(progress_color=C["accent"])
             self.progress.set(max(0.01, min(1.0, percent / 100.0)))
             self.spinner.set_progress(percent)
-            self.spinner_label.configure(text=f"Mengunduh model... {percent}%")
+            self.spinner_label.configure(text=f"{phase} {percent}%")
             size_text = (
                 f"{format_bytes(downloaded)} / {format_bytes(total)}"
                 if total else format_bytes(downloaded)
@@ -2187,6 +2445,7 @@ class WhiteFloodApp(ctk.CTk):
             self.btn_mask_brush,
             self.btn_mask_rectangle,
             self.btn_mask_eraser,
+            self.btn_install_rembg_model,
         ):
             control.configure(state=edit_state)
         for button in (self.btn_scale_2x, self.btn_scale_4x, self.btn_scale_8x):
@@ -2676,24 +2935,26 @@ class WhiteFloodApp(ctk.CTk):
             f"{self._duration_text(elapsed)}. Klik 'Simpan SVG'."
         )
 
-    def _on_video_progress(self, completed, total):
+    def _on_video_progress(self, completed, total, start_percent=0):
         if total:
-            percent = max(0, min(100, int(completed / total * 100)))
+            local = max(0, min(100, int(completed / total * 100)))
+            percent = int(start_percent + (local / 100) * (100 - start_percent))
             self.progress.set(max(0.01, percent / 100))
             self.spinner.set_progress(percent)
             self.progress_percent_var.set(f"{percent}%")
             self.progress_phase_var.set(f"Video frame {completed}/{total}")
             self.spinner_label.configure(text=f"Memproses video... {percent}%")
         else:
-            self.progress.set(0.25)
+            self.progress.set(max(0.01, start_percent / 100))
             self.spinner.set_indeterminate()
             self.progress_percent_var.set(f"Frame {completed}")
             self.progress_phase_var.set("Memproses video")
             self.spinner_label.configure(text=f"Memproses video... frame {completed}")
 
-    def _on_image_progress(self, completed, total):
+    def _on_image_progress(self, completed, total, start_percent=0):
         if total:
-            percent = max(0, min(100, int(completed / total * 100)))
+            local = max(0, min(100, int(completed / total * 100)))
+            percent = int(start_percent + (local / 100) * (100 - start_percent))
             self.progress.set(max(0.01, percent / 100))
             self.spinner.set_progress(percent)
             self.progress_percent_var.set(f"{percent}%")
@@ -2715,7 +2976,8 @@ class WhiteFloodApp(ctk.CTk):
             return
         processing_profile = self.processing_mode_var.get()
 
-        if not LamaInpaintService.model_available():
+        model_needed = not LamaInpaintService.model_available()
+        if model_needed:
             answer = messagebox.askyesno(
                 APP_NAME,
                 "Model AI LaMa belum tersedia di komputer ini.\n\n"
@@ -2743,15 +3005,28 @@ class WhiteFloodApp(ctk.CTk):
         self.progress_percent_var.set("0%")
         self.progress.set(0.01)
         self.status_text.set("Memproses area mask secara lokal...")
+        processing_start = 40 if model_needed else 0
 
         def progress_cb(completed, total):
             self._post_ui_event(
-                lambda done=completed, count=total: self._on_video_progress(done, count),
+                lambda done=completed, count=total: self._on_video_progress(
+                    done, count, processing_start
+                ),
             )
 
         def image_progress_cb(completed, total):
             self._post_ui_event(
-                lambda done=completed, count=total: self._on_image_progress(done, count),
+                lambda done=completed, count=total: self._on_image_progress(
+                    done, count, processing_start
+                ),
+            )
+
+        def model_status_cb(event):
+            mapped_event = map_progress_event(event, 0, processing_start)
+            self._post_ui_event(
+                lambda value=mapped_event: self._apply_status_event(
+                    value, TOOL_WATERMARK, 0
+                ),
             )
 
         def worker():
@@ -2759,9 +3034,7 @@ class WhiteFloodApp(ctk.CTk):
                 if not LamaInpaintService.model_available():
                     LamaInpaintService.download_model(
                         cancel_event=self._cancel_event,
-                        status_cb=lambda event: self._post_ui_event(
-                            lambda value=event: self._apply_status_event(value, TOOL_WATERMARK, 0),
-                        ),
+                        status_cb=model_status_cb,
                     )
                 if self._lama_service is None or not self._lama_service.model_path.is_file():
                     self._lama_service = LamaInpaintService()
@@ -2874,7 +3147,8 @@ class WhiteFloodApp(ctk.CTk):
                 f"Model AI '{internal_model}' belum terinstal di komputer.\n\n"
                 f"Apakah kamu ingin mengunduh model ini sekarang?\n"
                 "Model ini berukuran besar dan membutuhkan internet. "
-                "Progress serta ukuran unduhan tampil di aplikasi.",
+                "Progress serta ukuran unduhan tampil di aplikasi. Jika koneksi biasa gagal, "
+                "WhiteFlood otomatis mencoba jalur Windows kantor.",
             )
             if not ans:
                 self.preview_state_var.set(
@@ -2926,6 +3200,7 @@ class WhiteFloodApp(ctk.CTk):
                             model_name=internal_model, alpha_matting=am,
                             status_cb=_status_cb,
                             processing_profile=processing_profile,
+                            cancel_event=self._cancel_event,
                         )
                     else:
                         _status_cb(25.0)
@@ -3182,7 +3457,8 @@ class WhiteFloodApp(ctk.CTk):
                 f"Model AI '{internal_model}' belum terinstal di komputer.\n\n"
                 f"Apakah kamu ingin mengunduh model ini sekarang?\n"
                 "Model ini berukuran besar dan membutuhkan internet. "
-                "Progress serta ukuran unduhan tampil di aplikasi.",
+                "Progress serta ukuran unduhan tampil di aplikasi. Jika koneksi biasa gagal, "
+                "WhiteFlood otomatis mencoba jalur Windows kantor.",
             )
             if not ans:
                 self.status_text.set("Pengunduhan model dibatalkan pengguna.")
@@ -3202,9 +3478,24 @@ class WhiteFloodApp(ctk.CTk):
         self.btn_cancel_batch.configure(state="normal", fg_color=C["red"])
         self._show_processing_overlay("Memproses batch...", percent=0)
 
+        batch_context = {"index": 1, "last_percent": 0.0}
+
         def _batch_status(event):
+            mapped_event = map_batch_progress_event(
+                event, batch_context["index"], total
+            )
+            if isinstance(mapped_event, dict) and "percent" in mapped_event:
+                mapped_event = dict(mapped_event)
+                mapped_event["percent"] = max(
+                    int(batch_context["last_percent"]),
+                    int(mapped_event["percent"]),
+                )
+                batch_context["last_percent"] = mapped_event["percent"]
+            elif isinstance(mapped_event, (int, float)):
+                mapped_event = max(batch_context["last_percent"], mapped_event)
+                batch_context["last_percent"] = mapped_event
             self._post_ui_event(
-                lambda value=event: self._apply_status_event(value, tool, scale),
+                lambda value=mapped_event: self._apply_status_event(value, tool, scale),
             )
 
         def _batch():
@@ -3213,6 +3504,8 @@ class WhiteFloodApp(ctk.CTk):
             for idx, src in enumerate(files, 1):
                 if self._batch_cancelled or self._cancel_event.is_set():
                     break
+
+                batch_context["index"] = idx
 
                 extension = ".svg" if tool == TOOL_VECTORIZE else ".png"
                 dst_path, next_seq = self._get_next_sequence_path(
@@ -3239,6 +3532,7 @@ class WhiteFloodApp(ctk.CTk):
                             model_name=internal_model, alpha_matting=am, erode_size=er,
                             tool=tool, scale=scale, status_cb=_batch_status,
                             processing_profile=processing_profile,
+                            cancel_event=self._cancel_event,
                         )
                     ok += 1
                 except Exception as e:
@@ -3254,10 +3548,11 @@ class WhiteFloodApp(ctk.CTk):
         self.status_text.set(
             f"Memproses {idx}/{total}: {src_name} -> {dst_name} [RAM: {get_process_memory_mb()} MB]"
         )
-        self.progress.set(idx / total)
-        self.spinner.set_progress((idx / total) * 100)
+        completed_before = (idx - 1) / total
+        self.progress.set(completed_before)
+        self.spinner.set_progress(completed_before * 100)
         self.progress_phase_var.set(f"Batch {idx}/{total}")
-        self.progress_percent_var.set(f"{int((idx / total) * 100)}%")
+        self.progress_percent_var.set(f"{int(completed_before * 100)}%")
 
     def _batch_done(self, ok, total, errors, cancelled=False):
         elapsed = self._stop_process_timer()
@@ -3266,10 +3561,11 @@ class WhiteFloodApp(ctk.CTk):
             self._processing = False
             self._finish_close()
             return
-        self.spinner.set_progress(100 if not cancelled else 0)
+        final_percent = int((ok / total) * 100) if cancelled and total else 100
+        self.spinner.set_progress(final_percent)
         self._hide_processing_overlay()
-        self.progress.set(0)
-        self.progress_percent_var.set("0%")
+        self.progress.set(final_percent / 100)
+        self.progress_percent_var.set(f"{final_percent}%")
         self._processing = False
         self._update_button_states()
         self.btn_cancel_batch.configure(state="disabled", fg_color=C["border"])
