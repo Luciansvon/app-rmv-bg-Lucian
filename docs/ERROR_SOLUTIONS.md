@@ -463,7 +463,7 @@ inferensi dan menguji perpindahan progress bar kembali ke determinate.
 Tanggal: 2026-08-11
 Versi: 2.6.2
 Area: Remove Background | Model Download
-Status: Diperbaiki; release sedang dipublikasikan
+Status: Diperbaiki dan dirilis pada v2.6.2
 
 ### Gejala
 
@@ -493,6 +493,9 @@ Status: Diperbaiki; release sedang dipublikasikan
   lokasi `%USERPROFILE%\\.u2net`, dan detail teknis aktual.
 - README menyediakan perintah PowerShell read-only untuk memantau nama, ukuran,
   dan waktu perubahan file model setiap dua detik.
+- Untuk jaringan yang memang melarang GitHub, README mendokumentasikan instalasi
+  offline melalui media yang disetujui admin kantor, nama file tujuan empat
+  model, dan verifikasi MD5 dari `rembg 2.0.78`.
 
 ### Perlindungan regresi
 
@@ -516,9 +519,11 @@ Status: Diperbaiki; release sedang dipublikasikan
 - Smoke start EXE selama 15 detik berhasil; proses tetap hidup dan ditutup setelah
   pemeriksaan. Rendering GUI dan unduhan penuh model belum diuji.
 
-### Gate yang belum selesai pada saat catatan ini dibuat
+### Batas verifikasi
 
-- Unduhan penuh BiRefNet pada PC kantor dan upload GitHub Release v2.6.2.
+- Unduhan penuh BiRefNet pada jaringan PC kantor belum diuji dari environment
+  ini. Release v2.6.2 sudah publik; asset GitHub berstatus `uploaded`, ukuran dan
+  SHA-256 cocok dengan artifact lokal.
 
 ### File terdampak
 

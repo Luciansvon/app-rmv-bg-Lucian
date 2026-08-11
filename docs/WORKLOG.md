@@ -427,7 +427,7 @@ static/unit verification, build, dan push selesai.
 
 ## 2026-08-11 - Fix unduhan model 15% dan persiapan v2.6.2
 
-Status: source patch, test, build, dan smoke start EXE selesai; release sedang berjalan.
+Status: source patch, test, build, smoke start EXE, push, dan release publik v2.6.2 selesai.
 
 ### Perubahan
 
@@ -439,6 +439,9 @@ Status: source patch, test, build, dan smoke start EXE selesai; release sedang b
 - Error menjelaskan kemungkinan firewall/proxy kantor dan lokasi model
   `%USERPROFILE%\\.u2net`.
 - README menambahkan monitor PowerShell read-only untuk ukuran file model.
+- README menambahkan fallback instalasi offline empat model BiRefNet beserta
+  nama file tujuan dan MD5 `rembg 2.0.78`; pemindahan file tetap mengikuti
+  kebijakan keamanan kantor.
 - Menaikkan versi aplikasi menjadi v2.6.2.
 
 ### Bukti verifikasi aktual
@@ -456,7 +459,16 @@ Status: source patch, test, build, dan smoke start EXE selesai; release sedang b
 - Smoke start EXE selama 15 detik berhasil; proses tetap hidup dan ditutup setelah
   pemeriksaan.
 
-### Gate berjalan
+### Bukti release
 
-- Final diff check, commit, push, dan GitHub Release v2.6.2.
-- Rendering GUI serta unduhan penuh BiRefNet pada PC kantor belum diverifikasi.
+- Commit patch: `b59bf6e` pada branch `codex/fix-remove-bg-progress`.
+- Release: https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.2
+- Asset `WhiteFlood_BG_Remover.exe` berstatus `uploaded`, ukuran 294,709,318
+  bytes, dan digest GitHub
+  `sha256:51dae4515c8166aaa556f36eedecb17f732f9851152524c4abeeb6b440c826ab`
+  cocok dengan artifact lokal.
+
+### Batas verifikasi
+
+- Rendering GUI serta unduhan penuh BiRefNet pada jaringan PC kantor belum
+  diverifikasi dari environment ini.

@@ -376,8 +376,8 @@ source aktif, regression test, dokumentasi, build, push, dan release v2.6.1.
 
 ## 2026-08-11 - Fix unduhan model mentok 15% dan release v2.6.2
 
-Status: Implementasi, test, smoke download, build, dan smoke start EXE lulus;
-commit/push/release sedang berjalan.
+Status: Selesai. Implementasi, test, smoke download, build, smoke start EXE,
+commit, push, dan release publik v2.6.2 lulus.
 
 ### Fakta dan root cause yang sudah terbukti
 

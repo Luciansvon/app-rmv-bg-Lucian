@@ -121,6 +121,27 @@ while ($true) {
 
 Tekan `Ctrl+C` untuk berhenti. Jika `UkuranMB` terus bertambah, unduhan masih berjalan. Jika tidak berubah lalu aplikasi menampilkan timeout, cek firewall/proxy kantor.
 
+### Instal model secara offline untuk PC kantor strict
+
+Kalau download GitHub dilarang oleh kebijakan kantor, jangan mematikan firewall. Download atau ambil model dari PC lain yang diizinkan, cek hash, lalu pindahkan memakai media yang disetujui admin kantor.
+
+| Mode aplikasi | Nama file tujuan | MD5 rembg 2.0.78 |
+|---|---|---|
+| Furniture Quality | `birefnet-massive.onnx` | `33e726a2136a3d59eb0fdf613e31e3e9` |
+| Fast | `birefnet-general.onnx` | `7a35a0141cbbc80de11d9c9a28f52697` |
+| Person | `birefnet-portrait.onnx` | `c3a64a6abf20250d090cd055f12a3b67` |
+| High Detail | `birefnet-hrsod.onnx` | `c017ade5de8a50ff0fd74d790d268dda` |
+
+Contoh untuk model furnitur dari flashdisk `E:`:
+
+```powershell
+New-Item -ItemType Directory "$env:USERPROFILE\.u2net" -Force
+Copy-Item "E:\birefnet-massive.onnx" "$env:USERPROFILE\.u2net\birefnet-massive.onnx"
+Get-FileHash "$env:USERPROFILE\.u2net\birefnet-massive.onnx" -Algorithm MD5
+```
+
+Hasil MD5 harus persis `33e726a2136a3d59eb0fdf613e31e3e9`. Jika berbeda, jangan dipakai karena file salah atau rusak. WhiteFlood akan memakai file valid tersebut secara lokal tanpa download ulang.
+
 Angka model Remove Background mengikuti model yang dipakai `rembg` 2.0.78 saat audit pada 2026-08-10. Dependency di `requirements.txt` masih mengizinkan versi `rembg` yang lebih baru, sehingga ukuran model bisa berubah pada versi mendatang.
 
 ## Run from source
