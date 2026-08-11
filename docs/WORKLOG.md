@@ -518,17 +518,21 @@ selesai; publikasi GitHub dicatat setelah upload diverifikasi.
 
 - Build awal staging gagal sebelum packaging karena path asset relatif ikut
   berpindah ke folder spec. `build_exe.py` diperbaiki memakai path asset absolut.
-- Build kedua lulus, lalu source mendapat satu edge-case fix untuk transfer HTTP
-  tidak lengkap. Build final PyInstaller 6.21.0 lulus dalam 239,5 detik pada
-  Python 3.12.10.
-- Artifact final: `WhiteFlood_BG_Remover.exe`, 294.771.175 byte (281,12 MiB),
-  dibuat 2026-08-11 11:09:23.
+- Build kedua lulus, lalu source mendapat edge-case fix transfer HTTP tidak
+  lengkap dan perbaikan status awal inferensi dari bukti screenshot user.
+  Build UI-final PyInstaller 6.21.0 lulus dalam 208,5 detik pada Python 3.12.10.
+- Artifact final: `WhiteFlood_BG_Remover.exe`, 294.769.390 byte (281,11 MiB),
+  dibuat 2026-08-11 11:18:37.
 - SHA-256:
-  `470E8CD94B317D8F0AA4489EF49E7CFD0480AEE67C4861402FCD1D00A708C97F`.
+  `A556A60F5A819224C0247CE92396F4F9135B853696FBCA95BCBE5174FACE3E6D`.
 - Archive inspection membuktikan FFmpeg/FFprobe, Real-ESRGAN NCNN,
   rembg 2.0.78, Truststore 0.10.4, dan VTracer 0.6.15 masuk bundle.
 - Smoke start EXE selama 15 detik lulus; proses responsif dan ditutup setelah
   pemeriksaan.
+- Screenshot user membuktikan model Furniture Quality terbaca (tombol berubah
+  menjadi `Ganti / Verifikasi Model dari File`) dan RAM naik bertahap sampai
+  sekitar 3 GB. Overlay awal 0% diganti ke fase indeterminate sebelum worker
+  berat dimulai.
 - Salinan lokal versioned disimpan sebagai
   `dist/WhiteFlood_BG_Remover-v2.6.3.exe`; EXE dan ZIP v2.6.2 tidak dihapus.
 

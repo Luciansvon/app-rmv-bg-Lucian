@@ -537,6 +537,9 @@ Status: Diperbaiki; validasi akhir release dicatat di worklog
   callback internal fitur berikutnya masuk.
 - Download model dapat mencapai 100%, lalu verifikasi atau proses utama mulai
   lagi dari persentase rendah.
+- Setelah model sudah terpasang, Remove Background Furniture Quality dapat
+  terlihat diam di 0% selama lebih dari satu menit walau RAM naik bertahap;
+  engine sebenarnya sedang load/inferensi CPU.
 
 ### Root cause
 
@@ -555,6 +558,8 @@ Status: Diperbaiki; validasi akhir release dicatat di worklog
   progress global terakhir.
 - Beri rentang terpisah untuk copy/download dan verifikasi serta untuk download
   model sebagai subfase workflow utama.
+- Set fase indeterminate langsung dari Tk main thread sebelum worker AI mulai,
+  sehingga tahap tanpa callback kontinu tampil sebagai `...`, bukan 0% palsu.
 - Batch sukses atau selesai dengan error tetap 100%; pembatalan menampilkan
   proporsi file yang benar-benar selesai.
 
@@ -567,6 +572,9 @@ Status: Diperbaiki; validasi akhir release dicatat di worklog
   dan progress monotonik sampai 100%.
 - Runtime VTracer, LaMa Image, dan LaMa Video dua frame berhasil; output dan
   progress mencapai tahap akhir tanpa reset.
+- Screenshot runtime menunjukkan model sudah terbaca dan RAM naik bertahap
+  sampai sekitar 3 GB saat Furniture Quality berjalan. Perilaku tersebut
+  konsisten dengan load/inferensi aktif, bukan kegagalan download.
 
 ## ERR-011 - Unduhan model terlihat berhenti di 15%
 

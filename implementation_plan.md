@@ -540,7 +540,7 @@ nama file secara manual.
 - 35 unittest, syntax check, `git diff --check`, BITS fixture, GUI construction,
   BiRefNet-Massive nyata, Real-ESRGAN nyata, VTracer nyata, LaMa Image, dan
   LaMa Video lulus.
-- Build staging PyInstaller final lulus: 294.771.175 byte, SHA-256
-  `470E8CD94B317D8F0AA4489EF49E7CFD0480AEE67C4861402FCD1D00A708C97F`.
+- Build staging PyInstaller UI-final lulus: 294.769.390 byte, SHA-256
+  `A556A60F5A819224C0247CE92396F4F9135B853696FBCA95BCBE5174FACE3E6D`.
 - Smoke start EXE 15 detik lulus. Jaringan/proxy PC kantor tetap menjadi gate
   eksternal karena tidak tersedia pada laptop build.

@@ -3166,13 +3166,19 @@ class WhiteFloodApp(ctk.CTk):
             self._show_processing_overlay(f"Memperbesar foto ({scale}x)...", percent=0)
             self.status_text.set(f"Memperbesar foto ({scale}x)... [RAM: {get_process_memory_mb()} MB]")
             self.progress_phase_var.set(f"Upscale {scale}x")
+        elif is_ai:
+            # Set the honest non-numeric state on the Tk thread before the
+            # heavy ONNX session/model work can temporarily monopolize CPU.
+            self._show_processing_overlay(MODEL_PREPARE_PHASE, percent=None)
+            self._show_indeterminate_progress(MODEL_PREPARE_PHASE)
         else:
             self._show_processing_overlay("Menghapus background...", percent=0)
             self.status_text.set(f"Menghapus background ({mode})... [RAM: {get_process_memory_mb()} MB]")
             self.progress_phase_var.set("Remove Background")
 
-        self.progress.set(0.01)
-        self.progress_percent_var.set("0%")
+        if not is_ai:
+            self.progress.set(0.01)
+            self.progress_percent_var.set("0%")
 
         th = self.threshold_var.get()
         fr = self.fringe_var.get()

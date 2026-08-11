@@ -202,9 +202,9 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 Build release terakhir yang dicek:
 
 - Command: `python build_exe.py` dengan konfigurasi PyInstaller one-file windowed.
-- Output: `WhiteFlood_BG_Remover.exe` untuk release `v2.6.3`, 294,771,175 bytes, dibuat 2026-08-11 11:09:23.
+- Output: `WhiteFlood_BG_Remover.exe` untuk release `v2.6.3`, 294,769,390 bytes, dibuat 2026-08-11 11:18:37.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `470E8CD94B317D8F0AA4489EF49E7CFD0480AEE67C4861402FCD1D00A708C97F`.
+- SHA-256: `A556A60F5A819224C0247CE92396F4F9135B853696FBCA95BCBE5174FACE3E6D`.
 - Release URL target: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3`.
 - Dependency build: rembg 2.0.78, Pooch 1.9.0, Truststore 0.10.4, VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
@@ -266,6 +266,9 @@ Build release terakhir yang dicek:
 - Output progress NCNN Upscale dapat reset per tile/stage. Adapter UI mengambil
   angka terakhir pada satu baris dan menahan nilai tertinggi agar progress
   tidak mundur.
+- Sebelum worker Remove Background AI dimulai, Tk main thread langsung memasang
+  progress indeterminate. Load/inferensi CPU yang berat tidak lagi meninggalkan
+  overlay determinate palsu di 0% bila callback worker terlambat dirender.
 - Progress satu file pada batch dipetakan ke segmen global file tersebut.
   Pergantian file tidak mereset bar ke 0%, dan batch yang selesai tetap 100%.
 - Vectorize, Watermark Image, dan Watermark Video mempertahankan callback

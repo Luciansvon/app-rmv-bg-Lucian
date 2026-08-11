@@ -342,6 +342,10 @@ class FeatureContractTests(unittest.TestCase):
         self.assertNotIn("self.progress.set(0.15)", source)
         self.assertNotIn("status_cb(5.0)", source)
         self.assertIn(MODEL_CONNECT_PHASE, source)
+        self.assertIn(
+            "self._show_processing_overlay(MODEL_PREPARE_PHASE, percent=None)",
+            source,
+        )
 
     def test_progress_mode_switches_back_after_indeterminate_phase(self):
         class FakeProgress:

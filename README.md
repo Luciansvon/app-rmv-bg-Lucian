@@ -99,7 +99,7 @@ Jika semua mode AI dipakai setidaknya sekali, file model yang perlu tersedia ada
 - Model `rembg` disimpan di `%USERPROFILE%\\.u2net`.
 - Model LaMa disimpan di `%LOCALAPPDATA%\\WhiteFlood\\models`.
 - Model Upscale tidak diunduh saat pertama kali dipakai. `realesrgan-x4plus` sudah dibundel di EXE; seluruh file model Real-ESRGAN yang ada di bundle berjumlah sekitar 46.27 MB (44.12 MiB).
-- Ukuran EXE release v2.6.3 adalah 281.12 MiB (294,771,175 bytes). Kebutuhan dasar setelah semua model terunduh tetap sekitar **4.28 GB (3.99 GiB)**, belum termasuk file input, output, dan file sementara.
+- Ukuran EXE release v2.6.3 adalah 281.11 MiB (294,769,390 bytes). Kebutuhan dasar setelah semua model terunduh tetap sekitar **4.28 GB (3.99 GiB)**, belum termasuk file input, output, dan file sementara.
 
 ### Jika unduhan model tidak bergerak
 
