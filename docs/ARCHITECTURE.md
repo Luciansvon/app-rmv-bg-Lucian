@@ -205,7 +205,7 @@ Build release terakhir yang dicek:
 - Output: `WhiteFlood_BG_Remover.exe` untuk release `v2.6.3`, 294,769,390 bytes, dibuat 2026-08-11 11:18:37.
 - Mode: PyInstaller `--onefile --windowed`.
 - SHA-256: `A556A60F5A819224C0247CE92396F4F9135B853696FBCA95BCBE5174FACE3E6D`.
-- Release URL target: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3`.
+- Release URL: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3`.
 - Dependency build: rembg 2.0.78, Pooch 1.9.0, Truststore 0.10.4, VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
 - Smoke start EXE v2.6.3 selama 15 detik lulus dan proses responsif. GUI source construction serta pergantian White Background ke mode AI lulus. Warning build tetap mencatat unresolved `tbb12.dll` dari optional dependency numba; engine aktual yang dipakai workflow sudah lolos smoke runtime terpisah.

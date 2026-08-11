@@ -463,7 +463,7 @@ inferensi dan menguji perpindahan progress bar kembali ke determinate.
 Tanggal: 2026-08-11
 Versi: 2.6.3
 Area: Remove Background | Model Download | Windows Office
-Status: Diperbaiki; validasi akhir release dicatat di worklog
+Status: Diperbaiki dan dirilis pada v2.6.3
 
 ### Gejala
 
@@ -528,7 +528,7 @@ Status: Diperbaiki; validasi akhir release dicatat di worklog
 Tanggal: 2026-08-11
 Versi: 2.6.3
 Area: Progress UI | Upscale | Batch | Model | Watermark
-Status: Diperbaiki; validasi akhir release dicatat di worklog
+Status: Diperbaiki dan dirilis pada v2.6.3
 
 ### Gejala
 

@@ -477,8 +477,8 @@ Status: source patch, test, build, smoke start EXE, push, dan release publik v2.
 
 ## 2026-08-11 - Audit seluruh app dan persiapan release v2.6.3
 
-Status: implementasi, runtime smoke test source, build staging, dan smoke EXE
-selesai; publikasi GitHub dicatat setelah upload diverifikasi.
+Status: implementasi, runtime smoke test source, build staging, smoke EXE,
+push, dan release publik v2.6.3 selesai.
 
 ### Perubahan
 
@@ -536,9 +536,19 @@ selesai; publikasi GitHub dicatat setelah upload diverifikasi.
 - Salinan lokal versioned disimpan sebagai
   `dist/WhiteFlood_BG_Remover-v2.6.3.exe`; EXE dan ZIP v2.6.2 tidak dihapus.
 
-### Gate yang masih berjalan
+### Bukti release
 
-- Commit, push branch, upload release, dan pencocokan digest GitHub.
+- Commit implementasi: `b1d92ed`.
+- Commit status inferensi dari screenshot user: `bc4b5c7`.
+- Branch `codex/fix-remove-bg-progress` dipush ke origin.
+- Tag `v2.6.3` mengarah ke `bc4b5c7feb5bcfa3ac0bdd3f2b9fb011f562ddd8`.
+- Release publik:
+  https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3
+- Asset `WhiteFlood_BG_Remover.exe` berstatus `uploaded`, ukuran 294.769.390
+  byte, dan digest GitHub
+  `sha256:a556a60f5a819224c0247ce92396f4f9135b853696fbca95bcbe5174face3e6d`
+  cocok dengan artifact lokal.
+- Release dipublikasikan 2026-08-11 04:23:12 UTC dan bukan prerelease.
 
 ### Batas verifikasi
 

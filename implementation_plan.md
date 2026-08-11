@@ -434,8 +434,7 @@ commit, push, dan release publik v2.6.2 lulus.
 
 ## 2026-08-11 - Download model otomatis untuk jaringan kantor strict
 
-Status: Disetujui dan diimplementasikan; seluruh gate lokal v2.6.3 lulus,
-publikasi GitHub berjalan.
+Status: Selesai; seluruh gate lokal, push, dan release publik v2.6.3 lulus.
 Mode: AUDIT lalu REDESIGN
 Domain: UI_UX dengan batas teknis download Windows
 Specificity: PROBLEM
@@ -544,3 +543,7 @@ nama file secara manual.
   `A556A60F5A819224C0247CE92396F4F9135B853696FBCA95BCBE5174FACE3E6D`.
 - Smoke start EXE 15 detik lulus. Jaringan/proxy PC kantor tetap menjadi gate
   eksternal karena tidak tersedia pada laptop build.
+- Release publik: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3`.
+  Asset GitHub berukuran 294.769.390 byte dengan digest
+  `sha256:a556a60f5a819224c0247ce92396f4f9135b853696fbca95bcbe5174face3e6d`,
+  cocok dengan artifact lokal.
