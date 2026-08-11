@@ -374,3 +374,89 @@ Status: source patch dan static/unit verification selesai; GUI dengan model nyat
 
 - GUI smoke test Hapus Background dengan model lokal nyata untuk memastikan animasi indeterminate,
   hasil 100%, dan durasi selesai terlihat pada EXE/runtime.
+
+---
+
+## 2026-08-10 - Audit bugfix dan build v2.6.1
+
+Status: release publik v2.6.1 dibuat setelah audit source, patch,
+static/unit verification, build, dan push selesai.
+
+### Perubahan
+
+- Mengaktifkan perilaku `Mode Agresif` pada White Background.
+- Menyembunyikan kontrol White Background saat mode lain aktif.
+- Mereset media state saat file baru gagal dibuka dan mengunci mask/control
+  saat worker sedang memproses snapshot.
+- Memisahkan RGB dan alpha pada Upscale transparan, termasuk padding warna tepi,
+  resize alpha Lanczos, dan merge RGBA berukuran tepat.
+- Menyelaraskan teks ukuran model dengan dokumentasi project dan menaikkan versi
+  aplikasi ke v2.6.1.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile .\review-temp\WhiteFlood_BG_Remover_App\whiteflood_app.py .\review-temp\WhiteFlood_BG_Remover_App\features\watermark\mask_canvas.py` lulus.
+- `python -m unittest discover -s tests -v` lulus: 21 test.
+- `git diff --check` untuk file patch lulus; warning repository penuh hanya
+  berasal dari backup lama yang tidak disentuh.
+- `python build_exe.py` lulus dengan exit code 0 pada Python 3.12.10 dan
+  PyInstaller 6.21.0.
+- Artifact: `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`,
+  dibuat 2026-08-10 17:25:16, ukuran 294,711,783 bytes (281.06 MiB),
+  SHA-256 `CE1FAE8D148AC540DF5EAD7AEB746B7F93126E5DA0AB69E593ECA040784809A`.
+- Paket build terdeteksi membawa FFmpeg, Real-ESRGAN binary/model, dan logo.
+
+### Catatan risiko
+
+- Build log masih memuat warning dependency opsional `onnx`, `filetype`,
+  `pycparser`, `scipy`, dan `tbb12.dll`; build tetap exit 0.
+- GUI EXE, model nyata, dan GPU Vulkan belum dijalankan karena membutuhkan
+  smoke test runtime terpisah.
+
+### Bukti release
+
+- Commit: `53b004722a02c581a57df577ee45f9066324730c` pada branch
+  `codex/fix-remove-bg-progress`.
+- Release: https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1
+- Asset `WhiteFlood_BG_Remover.exe` berstatus GitHub `uploaded`, ukuran
+  294,711,783 bytes.
+- Digest GitHub `sha256:ce1fae8d148ac540df5ead7aeb746b7f93126e5da0ab69e593eca040784809a`
+  cocok dengan hash lokal.
+
+---
+
+## 2026-08-11 - Fix unduhan model 15% dan persiapan v2.6.2
+
+Status: source patch, test, build, dan smoke start EXE selesai; release sedang berjalan.
+
+### Perubahan
+
+- Menghapus progress awal dummy 15% pada worker dan 5% sebelum model session.
+- Menambahkan fase menghubungkan server, progress byte asli, verifikasi file,
+  dan pemuatan model lokal.
+- Download Pooch memakai chunk 64 KiB, connect timeout 15 detik, read timeout
+  30 detik, serta retry maksimal tiga kali.
+- Error menjelaskan kemungkinan firewall/proxy kantor dan lokasi model
+  `%USERPROFILE%\\.u2net`.
+- README menambahkan monitor PowerShell read-only untuk ukuran file model.
+- Menaikkan versi aplikasi menjadi v2.6.2.
+
+### Bukti verifikasi aktual
+
+- Syntax check source aktif lulus.
+- `python -m unittest discover -s tests -v` lulus: 25 test.
+- Smoke download file kecil dari repository resmi Pooch melalui HTTPS selesai;
+  adapter UI menerima event progress sampai 100%.
+- Endpoint BiRefNet-Massive merespons HTTP 200 dari
+  `release-assets.githubusercontent.com` dengan content-length 972,666,916 byte.
+- Build PyInstaller selesai dengan `Build complete`.
+- Artifact: `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`,
+  dibuat 2026-08-11 09:33:56, ukuran 294,709,318 bytes (281.06 MiB), SHA-256
+  `51DAE4515C8166AAA556F36EEDECB17F732F9851152524C4ABEEB6B440C826AB`.
+- Smoke start EXE selama 15 detik berhasil; proses tetap hidup dan ditutup setelah
+  pemeriksaan.
+
+### Gate berjalan
+
+- Final diff check, commit, push, dan GitHub Release v2.6.2.
+- Rendering GUI serta unduhan penuh BiRefNet pada PC kantor belum diverifikasi.

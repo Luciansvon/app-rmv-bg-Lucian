@@ -457,3 +457,152 @@ inferensi dan menguji perpindahan progress bar kembali ke determinate.
 - `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
 - `tests/test_features.py`
 - `docs/ARCHITECTURE.md`
+
+## ERR-011 - Unduhan model terlihat berhenti di 15%
+
+Tanggal: 2026-08-11
+Versi: 2.6.2
+Area: Remove Background | Model Download
+Status: Diperbaiki; release sedang dipublikasikan
+
+### Gejala
+
+- Pada pemakaian pertama Remove Background, progress terlihat berhenti di 15%.
+- UI belum menampilkan ukuran byte unduhan sehingga pengguna tidak tahu apakah
+  server belum tersambung, jaringan kantor memblokir GitHub, atau file sedang
+  diunduh.
+
+### Root cause
+
+- Worker mengatur progress ke 15% sebelum koneksi dan unduhan dimulai. Nilai
+  tersebut adalah angka dummy, bukan progress byte dari server.
+- Total byte Pooch baru tersedia setelah respons HTTP diterima. Selama koneksi
+  belum memberi respons, UI mempertahankan angka dummy tersebut.
+- Runtime unduhan internet nyata pada EXE v2.6.1 belum pernah melewati gate
+  smoke test dan sudah tercatat sebagai pemeriksaan pending.
+
+### Solusi
+
+- Menghapus angka dummy 15% dan angka awal 5% dari jalur model.
+- Menampilkan fase indeterminate saat menyiapkan model dan menghubungkan server.
+- Memakai progress byte asli setelah header HTTP tersedia, dengan chunk 64 KiB,
+  connect timeout 15 detik, read timeout 30 detik, dan maksimal tiga percobaan.
+- Menampilkan fase verifikasi/pemuatan model setelah file selesai diterima.
+- Error koneksi menjelaskan kemungkinan firewall/proxy kantor, host
+  `github.com` dan `release-assets.githubusercontent.com` yang perlu diizinkan,
+  lokasi `%USERPROFILE%\\.u2net`, dan detail teknis aktual.
+- README menyediakan perintah PowerShell read-only untuk memantau nama, ukuran,
+  dan waktu perubahan file model setiap dua detik.
+
+### Perlindungan regresi
+
+- Test memastikan source tidak lagi memiliki progress dummy 15%/5%.
+- Test memastikan downloader memakai adapter UI, chunk 64 KiB, dan timeout
+  eksplisit.
+- Test memastikan progress memakai byte asli dan pesan error jaringan kantor
+  berisi langkah lanjut yang bisa dilakukan.
+
+### Bukti verifikasi aktual
+
+- Syntax check source aktif lulus.
+- `python -m unittest discover -s tests -v` lulus: 25 test.
+- Smoke download HTTPS kecil melalui `pooch.HTTPDownloader` dan adapter UI yang
+  sama selesai serta menghasilkan event 100%.
+- Endpoint model BiRefNet-Massive merespons HTTP 200 dengan ukuran 972,666,916
+  bytes melalui `release-assets.githubusercontent.com`.
+- Build PyInstaller selesai dengan `Build complete`; EXE berukuran 294,709,318
+  bytes dan SHA-256
+  `51DAE4515C8166AAA556F36EEDECB17F732F9851152524C4ABEEB6B440C826AB`.
+- Smoke start EXE selama 15 detik berhasil; proses tetap hidup dan ditutup setelah
+  pemeriksaan. Rendering GUI dan unduhan penuh model belum diuji.
+
+### Gate yang belum selesai pada saat catatan ini dibuat
+
+- Unduhan penuh BiRefNet pada PC kantor dan upload GitHub Release v2.6.2.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `tests/test_features.py`
+- `README.md`
+- `docs/ERROR_SOLUTIONS.md`
+- `docs/WORKLOG.md`
+
+## ERR-010 - Audit bugfix: alpha pipeline, state file, dan kontrol mode
+
+Tanggal: 2026-08-10
+Versi: 2.6.1
+Area: Remove Background | Upscale | Watermark UI
+Status: Diperbaiki; GUI runtime masih pending
+
+### Gejala
+
+- Toggle `Mode Agresif` terlihat bisa dipilih, tetapi hasil White Background
+  sama dengan mode biasa.
+- Kontrol White Threshold, Fringe Cleanup, dan Mode Agresif tetap terlihat saat
+  mode AI aktif.
+- Jika file baru gagal dibuka, preview atau tombol hasil dari file sebelumnya
+  dapat tertinggal.
+- Input PNG transparan dikirim sebagai RGBA langsung ke engine Upscale,
+  sehingga jalur source belum memenuhi kontrak pemrosesan RGB dan alpha
+  terpisah.
+- Dialog Remove Background menyebut ukuran model `150-250 MB`, tidak sesuai
+  dengan ukuran BiRefNet yang dicatat di README.
+
+### Root cause
+
+- Parameter `aggressive` hanya diteruskan sampai `flood_remove_bg()` dan tidak
+  digunakan di dalam algoritma.
+- `adv_section` di-pack sejak UI dibuat, tetapi tidak di-hide pada mode non-
+  White Background.
+- State lama baru dikosongkan sebagian sebelum pemuatan file; jalur exception
+  tidak selalu mengembalikan surface dan button state ke kondisi kosong.
+- Jalur Upscale sebelumnya menyimpan input transparan sebagai RGBA dan
+  mempercayakan pemrosesan alpha ke backend.
+
+### Solusi
+
+- Mode Agresif sekarang menurunkan threshold near-white sebesar 20 agar
+  backdrop putih/abu-abu yang sedikit lebih gelap ikut terhapus. UI tetap
+  memberi risiko bahwa detail produk terang bisa ikut terhapus.
+- Advanced settings hanya ditampilkan pada White Background dan visibility
+  diinisialisasi sejak startup.
+- Media state dibersihkan sebelum load baru dan saat load gagal; temporary
+  video output juga dibersihkan.
+- Mask editor dan selector proses dikunci saat worker aktif agar snapshot mask
+  tidak berbeda dengan yang sedang diproses.
+- RGB transparan diberi padding warna lokal di sekitar tepi terlihat, dikirim
+  ke Real-ESRGAN sebagai RGB, alpha di-resize dengan Lanczos, lalu digabung
+  kembali sebagai RGBA dengan ukuran final yang tepat.
+- Dialog model memakai teks generik yang tidak mengklaim ukuran file yang salah.
+
+### Perlindungan regresi
+
+- Test agresif memastikan backdrop near-white berubah menjadi transparan,
+  sementara objek gelap tetap dipertahankan.
+- Test alpha memastikan input backend bermode `RGB`, hasil bermode `RGBA`,
+  dan ukuran output sesuai skala.
+- Test padding memastikan warna transparan dekat tepi mengambil warna piksel
+  terlihat terdekat.
+
+### Bukti verifikasi aktual
+
+- `python -m py_compile .\\review-temp\\WhiteFlood_BG_Remover_App\\whiteflood_app.py`
+  dan `mask_canvas.py` lulus.
+- `python -m unittest discover -s tests -v` lulus: 21 test.
+- `git diff --check` untuk file patch lulus; warning yang tersisa pada
+  pemeriksaan seluruh repository berasal dari whitespace backup lama yang
+  tidak disentuh.
+- `python build_exe.py` lulus dengan exit code 0; EXE berukuran 294,711,783
+  bytes dan SHA-256
+  `CE1FAE8D148AC540DF5EAD7AEB746B7F93126E5DA0AB69E593ECA040784809A`.
+- Log PyInstaller masih mencatat warning dependency opsional dan `tbb12.dll`;
+  tidak ada bukti runtime EXE pada sesi ini untuk menyimpulkan dampaknya.
+- GUI, model nyata, dan GPU Vulkan belum dijalankan pada sesi ini.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `review-temp/WhiteFlood_BG_Remover_App/features/watermark/mask_canvas.py`
+- `tests/test_features.py`
+- `docs/ARCHITECTURE.md`

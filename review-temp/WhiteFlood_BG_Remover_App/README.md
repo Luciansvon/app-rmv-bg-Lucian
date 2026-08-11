@@ -6,7 +6,7 @@
 
 <p align="center">Windows desktop processing tools for furniture product photos and catalogs.</p>
 
-<p align="center"><strong>Version 2.6.0</strong> · Built by Bima Chakti</p>
+<p align="center"><strong>Version 2.6.1</strong> · Built by Bima Chakti</p>
 
 ## What it does
 
@@ -45,7 +45,7 @@ No unintended crop or resize is allowed.
 
 ## Download the release
 
-Download the standalone Windows executable from the [WhiteFlood v2.6.0 release](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.0). The release executable does not require Python. AI background-removal models may be downloaded once on first use, with progress displayed in the app.
+Download the standalone Windows executable from the [WhiteFlood v2.6.1 release](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1). The release executable does not require Python. AI background-removal models may be downloaded once on first use, with progress displayed in the app.
 
 ## Run from source
 

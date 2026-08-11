@@ -41,9 +41,13 @@ from features.watermark.media import (  # noqa: E402
 from features.watermark.video import VideoProcessor, VideoError  # noqa: E402
 import whiteflood_app as app_module  # noqa: E402
 from whiteflood_app import (  # noqa: E402
+    MODEL_CONNECT_PHASE,
+    MODEL_PREPARE_PHASE,
     REMOVE_BG_INFERENCE_PHASE,
     WhiteFloodApp,
+    _ModelDownloadProgress,
     _UiEventQueue,
+    _friendly_model_download_error,
     format_duration,
 )
 
@@ -87,6 +91,67 @@ class FeatureContractTests(unittest.TestCase):
         self.assertEqual(format_duration(65), "00:01:05")
         self.assertEqual(format_duration(3661), "01:01:01")
 
+    def test_aggressive_white_background_mode_changes_near_white_removal(self):
+        source = Image.new("RGB", (5, 5), (210, 210, 210))
+        source.putpixel((2, 2), (20, 20, 20))
+
+        normal = app_module.flood_remove_bg(
+            source, threshold=220, fringe=0, aggressive=False
+        )
+        aggressive = app_module.flood_remove_bg(
+            source, threshold=220, fringe=0, aggressive=True
+        )
+
+        self.assertEqual(normal.getpixel((0, 0))[3], 255)
+        self.assertEqual(aggressive.getpixel((0, 0))[3], 0)
+        self.assertEqual(aggressive.getpixel((2, 2))[3], 255)
+
+    def test_alpha_padding_uses_nearby_visible_rgb(self):
+        source = Image.new("RGBA", (5, 1), (200, 0, 0, 0))
+        source.putpixel((2, 0), (10, 20, 30, 255))
+
+        padded = app_module._alpha_aware_rgb(source, padding_radius=1)
+
+        self.assertEqual(padded.mode, "RGB")
+        self.assertEqual(padded.getpixel((1, 0)), (10, 20, 30))
+        self.assertEqual(padded.getpixel((3, 0)), (10, 20, 30))
+        self.assertEqual(padded.getpixel((0, 0)), (200, 0, 0))
+
+    def test_transparent_upscale_sends_rgb_and_merges_lanczos_alpha(self):
+        observed_modes = []
+
+        class FakePopen:
+            def __init__(self, command, **_kwargs):
+                input_path = Path(command[command.index("-i") + 1])
+                output_path = Path(command[command.index("-o") + 1])
+                with Image.open(input_path) as input_image:
+                    observed_modes.append(input_image.mode)
+                    input_image.resize((4, 4), Image.Resampling.NEAREST).save(
+                        output_path, format="PNG"
+                    )
+                self.stderr = []
+                self.returncode = 0
+
+            def wait(self):
+                return self.returncode
+
+        source = Image.new("RGBA", (2, 2), (220, 0, 0, 0))
+        source.putpixel((0, 0), (10, 20, 30, 255))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with mock.patch.object(
+                app_module,
+                "_get_realesrgan_paths",
+                return_value=(root, root / "fake.exe", root),
+            ), mock.patch("subprocess.Popen", FakePopen):
+                result = app_module.upscale_image_alpha_safe(source, scale=2)
+
+        self.assertEqual(observed_modes, ["RGB"])
+        self.assertEqual(result.mode, "RGBA")
+        self.assertEqual(result.size, (4, 4))
+        self.assertIsNotNone(result.getchannel("A").getbbox())
+
     def test_worker_ui_events_are_drained_on_main_thread(self):
         bridge = _UiEventQueue()
         events = []
@@ -121,8 +186,90 @@ class FeatureContractTests(unittest.TestCase):
             result = app_module.ai_remove_bg(source, status_cb=events.append)
 
         self.assertEqual(result.size, source.size)
+        self.assertEqual(
+            events[0],
+            {"kind": "phase_indeterminate", "message": MODEL_PREPARE_PHASE},
+        )
         self.assertEqual(events[1]["kind"], "phase_indeterminate")
         self.assertEqual(events[-1], 100.0)
+
+    def test_model_progress_reports_real_bytes_without_dummy_percent(self):
+        events = []
+        progress = _ModelDownloadProgress(events.append, "birefnet-massive")
+        progress.total = 100
+
+        progress.update(15)
+        progress._last_emit_at = 0
+        progress.update(35)
+
+        self.assertEqual(events[0]["percent"], 15)
+        self.assertEqual(events[-1]["downloaded"], 50)
+        self.assertEqual(events[-1]["total"], 100)
+
+    def test_model_connection_error_explains_office_firewall(self):
+        message = _friendly_model_download_error(
+            "birefnet-massive",
+            RuntimeError("HTTPSConnectionPool: Read timed out"),
+        )
+
+        self.assertIn("jaringan kantor", message)
+        self.assertIn("github.com", message)
+        self.assertIn(".u2net", message)
+        self.assertIn("Get-ChildItem", message)
+
+    def test_rembg_download_uses_ui_progress_and_explicit_timeouts(self):
+        events = []
+        fake_session = object()
+
+        class FakeSessionOptions:
+            pass
+
+        fake_ort = types.ModuleType("onnxruntime")
+        fake_ort.SessionOptions = FakeSessionOptions
+        fake_rembg = types.ModuleType("rembg")
+
+        def fake_new_session(*_args, **_kwargs):
+            import pooch
+
+            pooch.retrieve(
+                "https://example.invalid/model.onnx",
+                "md5:fake",
+                progressbar=True,
+            )
+            return fake_session
+
+        fake_rembg.new_session = fake_new_session
+        app_module._rembg_session = None
+        app_module._rembg_model_name = None
+        app_module._rembg_session_threads = None
+        try:
+            with mock.patch.dict(
+                sys.modules,
+                {"rembg": fake_rembg, "onnxruntime": fake_ort},
+            ), mock.patch("pooch.retrieve") as original_retrieve:
+                result = app_module._get_rembg_session(
+                    "birefnet-massive",
+                    status_cb=events.append,
+                    onnx_threads=2,
+                )
+
+            self.assertIs(result, fake_session)
+            downloader = original_retrieve.call_args.kwargs["downloader"]
+            self.assertEqual(downloader.chunk_size, 64 * 1024)
+            self.assertEqual(downloader.kwargs["timeout"], (15, 30))
+            self.assertIsInstance(downloader.progressbar, _ModelDownloadProgress)
+            self.assertEqual(events[-1]["kind"], "phase_indeterminate")
+        finally:
+            app_module._rembg_session = None
+            app_module._rembg_model_name = None
+            app_module._rembg_session_threads = None
+
+    def test_remove_background_worker_has_no_dummy_15_percent(self):
+        source = (APP_DIR / "whiteflood_app.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("self.progress.set(0.15)", source)
+        self.assertNotIn("status_cb(5.0)", source)
+        self.assertIn(MODEL_CONNECT_PHASE, source)
 
     def test_progress_mode_switches_back_after_indeterminate_phase(self):
         class FakeProgress:
@@ -208,6 +355,31 @@ class FeatureContractTests(unittest.TestCase):
         canvas._change_callback = lambda: changes.append(True)
         canvas._notify_change()
         self.assertEqual(changes, [True])
+
+    def test_mask_canvas_can_pause_editing_during_processing(self):
+        class FakeCanvas:
+            def __init__(self):
+                self.cursor = None
+
+            def configure(self, **kwargs):
+                self.cursor = kwargs["cursor"]
+
+        canvas = object.__new__(MaskCanvas)
+        canvas.canvas = FakeCanvas()
+        canvas._tool = "brush"
+        canvas._interactive = True
+        canvas._active_start = (1, 1)
+        canvas._active_points = [(1, 1)]
+
+        canvas.set_interactive(False)
+        self.assertFalse(canvas._interactive)
+        self.assertIsNone(canvas._active_start)
+        self.assertEqual(canvas._active_points, [])
+        self.assertEqual(canvas.canvas.cursor, "arrow")
+
+        canvas.set_interactive(True)
+        self.assertTrue(canvas._interactive)
+        self.assertEqual(canvas.canvas.cursor, "crosshair")
 
     def test_model_download_reports_progress_and_installs_atomically(self):
         class FakeResponse:

@@ -42,6 +42,7 @@ class MaskCanvas(ctk.CTkFrame):
         self._zoom = 1.0
         self._tool = "brush"
         self._brush_size = 50
+        self._interactive = True
         self._active_points = []
         self._active_start = None
         self._operations = []
@@ -75,6 +76,17 @@ class MaskCanvas(ctk.CTkFrame):
             raise ValueError("Tool mask harus brush, rectangle, atau eraser.")
         self._tool = tool
         self.canvas.configure(cursor="crosshair" if tool != "eraser" else "circle")
+
+    def set_interactive(self, enabled):
+        """Enable or pause mask editing while a worker owns a snapshot."""
+        self._interactive = bool(enabled)
+        if not self._interactive:
+            self._active_start = None
+            self._active_points = []
+        self.canvas.configure(
+            cursor=("crosshair" if self._tool != "eraser" else "circle")
+            if self._interactive else "arrow"
+        )
 
     def set_brush_size(self, size):
         self._brush_size = max(1, int(size))
@@ -206,6 +218,8 @@ class MaskCanvas(ctk.CTkFrame):
         )
 
     def _on_press(self, event):
+        if not self._interactive:
+            return
         point = self._canvas_to_source(event.x, event.y)
         if point is None:
             return
@@ -216,6 +230,8 @@ class MaskCanvas(ctk.CTkFrame):
             self._schedule_render()
 
     def _on_motion(self, event):
+        if not self._interactive:
+            return
         point = self._canvas_to_source(event.x, event.y)
         if point is None or self._active_start is None:
             return
@@ -229,6 +245,10 @@ class MaskCanvas(ctk.CTkFrame):
             self._schedule_render()
 
     def _on_release(self, event):
+        if not self._interactive:
+            self._active_start = None
+            self._active_points = []
+            return
         point = self._canvas_to_source(event.x, event.y)
         if point is None and self._active_points:
             point = self._active_points[-1]

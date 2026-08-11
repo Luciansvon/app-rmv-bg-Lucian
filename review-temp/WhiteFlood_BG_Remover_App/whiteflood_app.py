@@ -1,5 +1,5 @@
 """
-WhiteFlood BG Remover & Upscaler v2.6.0
+WhiteFlood BG Remover & Upscaler v2.6.2
 Built by Bima Chakti © 2026 Bima Chakti
 Aplikasi Windows Desktop untuk Foto Produk Furnitur (PNG Transparan).
 Dual Tools: Remove Background (Dimensi 100% Presisi) & Upscale (2x/4x/8x via Upscayl NCNN).
@@ -124,7 +124,7 @@ _rembg_session_threads = None
 # ═══════════════════════════════════════════════════════════
 
 APP_NAME = "WhiteFlood BG Remover"
-VERSION = "2.6.0"
+VERSION = "2.6.2"
 DEVELOPER_CREDIT = "Built by Bima Chakti\n\u00a9 2026 Bima Chakti"
 
 TOOL_WORKSPACE = "workspace"
@@ -162,6 +162,13 @@ REFINE_ORIGINAL = "Original (Rekomendasi)"
 REFINE_SOFT = "Soft (Pinggiran Halus)"
 REFINE_ALPHA_MATTE = "Alpha Matte (Deteksi Rambut)"
 REMOVE_BG_INFERENCE_PHASE = "Menjalankan AI lokal untuk menghitung mask objek..."
+MODEL_PREPARE_PHASE = "Menyiapkan model AI lokal..."
+MODEL_CONNECT_PHASE = "Menghubungkan ke server model..."
+MODEL_LOAD_PHASE = "Memverifikasi unduhan dan memuat model AI lokal..."
+MODEL_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+MODEL_CONNECT_TIMEOUT_SECONDS = 15
+MODEL_READ_TIMEOUT_SECONDS = 30
+AGGRESSIVE_THRESHOLD_RELAXATION = 20
 
 C = {
     "bg":           "#0d1014",
@@ -493,6 +500,48 @@ def make_checkerboard(w, h, cell=10):
     return img
 
 
+def _alpha_aware_rgb(img, padding_radius=8):
+    """Fill nearby fully-transparent RGB pixels from the nearest visible edge."""
+    rgba = img.convert("RGBA")
+    rgb = np.asarray(rgba.convert("RGB"), dtype=np.uint8).copy()
+    alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8)
+    known = alpha > 0
+    if not np.any(known) or np.all(known):
+        return Image.fromarray(rgb, mode="RGB")
+
+    height, width = known.shape
+    passes = max(0, int(padding_radius))
+    for _ in range(passes):
+        previous = known.copy()
+        filled = False
+        for dy, dx in NEIGHBORS_8:
+            source_y = slice(max(0, -dy), min(height, height - dy))
+            source_x = slice(max(0, -dx), min(width, width - dx))
+            target_y = slice(max(0, dy), min(height, height + dy))
+            target_x = slice(max(0, dx), min(width, width + dx))
+            candidates = (~known[target_y, target_x]) & previous[source_y, source_x]
+            if not np.any(candidates):
+                continue
+            target_rgb = rgb[target_y, target_x]
+            source_rgb = rgb[source_y, source_x]
+            target_rgb[candidates] = source_rgb[candidates]
+            rgb[target_y, target_x] = target_rgb
+            known[target_y, target_x] |= candidates
+            filled = True
+        if not filled:
+            break
+    return Image.fromarray(rgb, mode="RGB")
+
+
+def _merge_upscaled_alpha(rgb_img, alpha_img, output_size):
+    """Merge AI-upscaled RGB with deterministic Lanczos alpha output."""
+    rgb = rgb_img.convert("RGB")
+    if rgb.size != output_size:
+        rgb = rgb.resize(output_size, Image.Resampling.LANCZOS)
+    alpha = alpha_img.convert("L").resize(output_size, Image.Resampling.LANCZOS)
+    return Image.merge("RGBA", (*rgb.split(), alpha))
+
+
 def metadata_for_save(img):
     kw = {}
     for key in ("dpi", "icc_profile", "exif"):
@@ -553,6 +602,39 @@ class _ModelDownloadProgress:
             if self.total > 0:
                 self.downloaded = self.total
             self._emit(force=True)
+
+
+def _model_phase(message):
+    return {"kind": "phase_indeterminate", "message": message}
+
+
+def _friendly_model_download_error(model_name, error):
+    detail = str(error).strip() or error.__class__.__name__
+    connection_markers = (
+        "connection",
+        "disconnected",
+        "timed out",
+        "timeout",
+        "proxy",
+        "ssl",
+        "certificate",
+        "name resolution",
+        "temporary failure",
+        "github.com",
+        "status code 403",
+        "status code 407",
+    )
+    if any(marker in detail.lower() for marker in connection_markers):
+        return (
+            f"Gagal mengunduh model '{model_name}' karena server model tidak dapat dijangkau.\n\n"
+            "Cek koneksi internet. Jika memakai jaringan kantor, minta admin mengizinkan "
+            "github.com dan release-assets.githubusercontent.com pada firewall/proxy, lalu klik "
+            "'Proses Ulang'.\n\n"
+            f"Folder model: {Path.home() / '.u2net'}\n"
+            "Cek lewat PowerShell: Get-ChildItem \"$env:USERPROFILE\\.u2net\" -Force\n"
+            f"Detail teknis: {detail}"
+        )
+    return f"Gagal memuat model '{model_name}': {detail}"
 
 
 class _UiEventQueue:
@@ -620,18 +702,34 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None, onnx_threa
     for attempt in range(1, max_retries + 1):
         try:
             if status_cb:
-                if attempt > 1:
-                    status_cb(f"Mencoba ulang unduhan model '{model_name}' ({attempt}/{max_retries})")
+                if is_model_downloaded(model_name):
+                    status_cb(_model_phase(MODEL_PREPARE_PHASE))
+                elif attempt > 1:
+                    status_cb(_model_phase(
+                        f"Mencoba ulang koneksi model ({attempt}/{max_retries})..."
+                    ))
                 else:
-                    status_cb(f"Menyiapkan unduhan model '{model_name}'")
+                    status_cb(_model_phase(MODEL_CONNECT_PHASE))
 
             original_retrieve = pooch.retrieve
 
             def retrieve_with_ui_progress(*args, **kwargs):
                 if status_cb and kwargs.get("progressbar") is True:
                     kwargs = dict(kwargs)
-                    kwargs["progressbar"] = _ModelDownloadProgress(status_cb, model_name)
-                return original_retrieve(*args, **kwargs)
+                    progress = _ModelDownloadProgress(status_cb, model_name)
+                    kwargs["progressbar"] = False
+                    kwargs["downloader"] = pooch.HTTPDownloader(
+                        progressbar=progress,
+                        chunk_size=MODEL_DOWNLOAD_CHUNK_BYTES,
+                        timeout=(
+                            MODEL_CONNECT_TIMEOUT_SECONDS,
+                            MODEL_READ_TIMEOUT_SECONDS,
+                        ),
+                    )
+                result = original_retrieve(*args, **kwargs)
+                if status_cb:
+                    status_cb(_model_phase(MODEL_LOAD_PHASE))
+                return result
 
             pooch.retrieve = retrieve_with_ui_progress
             try:
@@ -642,22 +740,13 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None, onnx_threa
             _rembg_model_name = model_name
             _rembg_session_threads = selected_threads
 
-            if status_cb:
-                status_cb(f"Model '{model_name}' siap")
-
             return _rembg_session
         except Exception as e:
             last_err = e
             if attempt < max_retries:
                 time.sleep(1.5)
 
-    err_msg = str(last_err)
-    if any(k in err_msg for k in ("Connection", "RemoteDisconnected", "time out", "timed out", "Disconnected")):
-        raise RuntimeError(
-            f"Koneksi internet terputus saat mengunduh model '{model_name}'.\n\n"
-            f"Silakan pastikan koneksi internet stabil lalu klik 'Proses Ulang' untuk mencoba lagi."
-        )
-    raise RuntimeError(f"Gagal memuat model '{model_name}': {err_msg}")
+    raise RuntimeError(_friendly_model_download_error(model_name, last_err))
 
 
 def _get_realesrgan_paths():
@@ -736,7 +825,7 @@ def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive"
     rgba = img.convert("RGBA")
 
     if status_cb:
-        status_cb(5.0)
+        status_cb(_model_phase(MODEL_PREPARE_PHASE))
     profile = get_processing_profile(processing_profile) if processing_profile else None
     session = _get_rembg_session(
         model_name,
@@ -780,11 +869,19 @@ def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive"
 
 def flood_remove_bg(img, threshold=220, fringe=30,
                     edge_smooth=0, aggressive=False):
-    """Remove near-white connected background preserving exact pixel dimensions."""
+    """Remove near-white connected background preserving exact pixel dimensions.
+
+    Aggressive mode lowers the near-white threshold so slightly darker white or
+    gray backdrops are removed too. This can remove light product details.
+    """
     original_size = img.size
     rgba = img.convert("RGBA")
     arr = np.array(rgba, dtype=np.uint8)
     h, w = arr.shape[:2]
+
+    threshold = max(0, min(255, int(threshold)))
+    if aggressive:
+        threshold = max(0, threshold - AGGRESSIVE_THRESHOLD_RELAXATION)
 
     rgb = arr[:, :, :3].astype(np.float32)
     alpha = arr[:, :, 3].copy()
@@ -887,8 +984,14 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None, processing_profile=No
         input_path = tmpdir / "input.png"
         output_path = tmpdir / "output.png"
 
+        source_alpha = None
         if has_alpha:
-            save_img = img.convert("RGBA")
+            rgba_input = img.convert("RGBA")
+            source_alpha = rgba_input.getchannel("A")
+            save_img = _alpha_aware_rgb(
+                rgba_input,
+                padding_radius=min(16, max(2, int(scale) * 2)),
+            )
         else:
             save_img = img.convert("RGB")
 
@@ -968,7 +1071,7 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None, processing_profile=No
         with Image.open(output_path) as out_img:
             raw_result = out_img.copy()
 
-        result = raw_result.convert("RGBA" if has_alpha else "RGB")
+        result = raw_result.convert("RGB")
         del raw_result
 
         if result.size != ai_size:
@@ -979,16 +1082,21 @@ def upscale_image_alpha_safe(img, scale=2, status_cb=None, processing_profile=No
         if scale == 8:
             if status_cb:
                 status_cb(96.0)
-            resized = result.resize(new_size, Image.LANCZOS)
+            resized = result.resize(new_size, Image.Resampling.LANCZOS)
             del result
             result = resized
-            if status_cb:
-                status_cb(100.0)
+
+        if has_alpha:
+            result = _merge_upscaled_alpha(result, source_alpha, new_size)
+        else:
+            result = result.convert("RGB")
 
         if result.size != new_size:
             raise RuntimeError(
                 f"Internal error: Ukuran output mismatch ({result.size} vs {new_size})"
             )
+        if status_cb:
+            status_cb(100.0)
 
     gc.collect()
     return result
@@ -1324,28 +1432,27 @@ class WhiteFloodApp(ctk.CTk):
         self.refine_dropdown.pack(fill="x", pady=(0, 8))
 
         self.adv_section = CollapsibleFrame(self.frame_rmbg_settings, title="Pengaturan Lanjutan")
-        self.adv_section.pack(fill="x", pady=(0, 8))
         adv_f = self.adv_section.content_frame
 
         ctk.CTkLabel(adv_f, text="White Threshold", text_color=C["text"], font=ctk.CTkFont(size=11)).pack(anchor="w")
-        sl_t = ctk.CTkSlider(
+        self.threshold_slider = ctk.CTkSlider(
             adv_f, from_=180, to=254, variable=self.threshold_var,
             fg_color=C["border"], progress_color=C["accent"],
             button_color=C["accent"], button_hover_color=C["accent_hover"],
             command=self._on_threshold, height=14,
         )
-        sl_t.pack(fill="x", pady=(2, 0))
+        self.threshold_slider.pack(fill="x", pady=(2, 0))
         self._lbl_white_threshold = ctk.CTkLabel(adv_f, text="220", text_color=C["accent"], font=ctk.CTkFont(size=10, weight="bold"))
         self._lbl_white_threshold.pack(anchor="e", pady=(0, 4))
 
         ctk.CTkLabel(adv_f, text="Fringe Cleanup", text_color=C["text"], font=ctk.CTkFont(size=11)).pack(anchor="w")
-        sl_f = ctk.CTkSlider(
+        self.fringe_slider = ctk.CTkSlider(
             adv_f, from_=0, to=80, variable=self.fringe_var,
             fg_color=C["border"], progress_color=C["accent"],
             button_color=C["accent"], button_hover_color=C["accent_hover"],
             command=self._on_fringe, height=14,
         )
-        sl_f.pack(fill="x", pady=(2, 0))
+        self.fringe_slider.pack(fill="x", pady=(2, 0))
         self._lbl_fringe_cleanup = ctk.CTkLabel(adv_f, text="30", text_color=C["accent"], font=ctk.CTkFont(size=10, weight="bold"))
         self._lbl_fringe_cleanup.pack(anchor="e", pady=(0, 4))
 
@@ -1356,6 +1463,7 @@ class WhiteFloodApp(ctk.CTk):
             border_color=C["border"], corner_radius=4,
         )
         self.aggressive_cb.pack(anchor="w", pady=(2, 0))
+        self._toggle_flood_settings()
 
         # ── Tool 2: Upscale Settings Frame ──────────────────
         self.frame_upscale_settings = ctk.CTkFrame(sidebar, fg_color="transparent")
@@ -1876,8 +1984,11 @@ class WhiteFloodApp(ctk.CTk):
             self.refine_dropdown.pack_forget()
             self.adv_section.pack(fill="x", pady=(0, 8))
         else:
-            self.lbl_refine.pack(anchor="w", pady=(8, 4))
-            self.refine_dropdown.pack(fill="x", pady=(0, 8))
+            self.adv_section.pack_forget()
+            if not self.lbl_refine.winfo_manager():
+                self.lbl_refine.pack(anchor="w", pady=(8, 4))
+            if not self.refine_dropdown.winfo_manager():
+                self.refine_dropdown.pack(fill="x", pady=(0, 8))
 
     def _start_process_timer(self):
         self._stop_process_timer(update_label=False)
@@ -2062,6 +2173,25 @@ class WhiteFloodApp(ctk.CTk):
     def _update_button_states(self):
         """Reconstruct UI states from the current page and result state."""
         batch_supported = self.active_tool in {TOOL_REMOVE_BG, TOOL_UPSCALE, TOOL_VECTORIZE}
+        edit_state = "disabled" if self._processing else "normal"
+        for control in (
+            self.mode_dropdown,
+            self.refine_dropdown,
+            self.threshold_slider,
+            self.fringe_slider,
+            self.aggressive_cb,
+            self.vector_preset_menu,
+            self.processing_mode_menu,
+            self.watermark_mode_menu,
+            self.mask_brush_slider,
+            self.btn_mask_brush,
+            self.btn_mask_rectangle,
+            self.btn_mask_eraser,
+        ):
+            control.configure(state=edit_state)
+        for button in (self.btn_scale_2x, self.btn_scale_4x, self.btn_scale_8x):
+            button.configure(state=edit_state)
+        self.mask_canvas.set_interactive(not self._processing)
         header_open_label = "Open Video" if self.active_tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO else "Open Image"
         header_export_label = "Export SVG" if self.active_tool == TOOL_VECTORIZE else (
             "Export Video" if self.active_tool == TOOL_WATERMARK and self.watermark_mode_var.get() == WATERMARK_VIDEO else "Export"
@@ -2176,6 +2306,8 @@ class WhiteFloodApp(ctk.CTk):
         return self._video_temp_dir / "processed.mp4"
 
     def _set_mask_tool(self, tool):
+        if self._processing:
+            return
         self.mask_canvas.set_tool(tool)
         for name, button in (
             ("brush", self.btn_mask_brush),
@@ -2189,6 +2321,8 @@ class WhiteFloodApp(ctk.CTk):
             )
 
     def _on_mask_brush_size(self, value):
+        if self._processing:
+            return
         size = max(1, round(float(value)))
         self.watermark_brush_var.set(size)
         self.mask_brush_label.configure(text=f"{size} px")
@@ -2210,6 +2344,8 @@ class WhiteFloodApp(ctk.CTk):
             self.status_text.set("Mask kosong. Tandai area watermark terlebih dahulu.")
 
     def _mask_action(self, action):
+        if self._processing:
+            return
         if action == "undo":
             self.mask_canvas.undo()
         elif action == "redo":
@@ -2230,6 +2366,8 @@ class WhiteFloodApp(ctk.CTk):
         self.vector_preset_desc.configure(text=descriptions.get(value, ""))
 
     def _on_watermark_mode_change(self, value=None):
+        if self._processing:
+            return
         value = value or self.watermark_mode_var.get()
         self.watermark_mode_var.set(value)
         self._watermark_kind = value.lower()
@@ -2260,6 +2398,7 @@ class WhiteFloodApp(ctk.CTk):
             self._on_watermark_mode_change(mode)
 
     def _clear_media_state(self):
+        self._cleanup_video_temp()
         self._src_path = None
         self._original = None
         self._original_meta = {}
@@ -2351,12 +2490,8 @@ class WhiteFloodApp(ctk.CTk):
         )
         if not src:
             return
+        self._clear_media_state()
         self._src_path = src
-        self._original = None
-        self._result = None
-        self._vector_result = None
-        self._video_result = None
-        self._video_source_info = None
         self.preview_file_var.set(Path(src).name)
         self.file_state_label.configure(text=f"File aktif: {Path(src).name}")
         self.preview_state_var.set("MEMUAT  /  LOKAL")
@@ -2390,7 +2525,11 @@ class WhiteFloodApp(ctk.CTk):
                     "Klik 'Proses Remove Background' saat siap."
                 )
         except Exception as e:
+            self._clear_media_state()
+            self.preview_state_var.set("ERROR  /  FILE TIDAK BISA DIBUKA")
             self.status_text.set(f"Gagal memuat gambar: {e}")
+            self._show_active_surface()
+            self._update_button_states()
             messagebox.showerror(APP_NAME, f"Gagal memuat gambar:\n{e}")
             return
 
@@ -2406,12 +2545,8 @@ class WhiteFloodApp(ctk.CTk):
         if not src:
             return
 
+        self._clear_media_state()
         self._src_path = src
-        self._original = None
-        self._result = None
-        self._vector_result = None
-        self._video_result = None
-        self._video_source_info = None
         self._watermark_kind = mode.lower()
         self.preview_file_var.set(Path(src).name)
         self.file_state_label.configure(text=f"File aktif: {Path(src).name}")
@@ -2447,8 +2582,11 @@ class WhiteFloodApp(ctk.CTk):
             self._show_active_surface()
             self._update_button_states()
         except Exception as exc:
-            self._original = None
+            self._clear_media_state()
+            self.preview_state_var.set("ERROR  /  MEDIA TIDAK BISA DIBUKA")
             self.status_text.set(f"Gagal memuat media: {exc}")
+            self._show_active_surface()
+            self._update_button_states()
             messagebox.showerror(APP_NAME, f"Gagal memuat media:\n\n{exc}")
 
     def repreview(self):
@@ -2735,7 +2873,8 @@ class WhiteFloodApp(ctk.CTk):
                 APP_NAME,
                 f"Model AI '{internal_model}' belum terinstal di komputer.\n\n"
                 f"Apakah kamu ingin mengunduh model ini sekarang?\n"
-                f"(Ukuran file ±150–250 MB, mengunduh via internet).",
+                "Model ini berukuran besar dan membutuhkan internet. "
+                "Progress serta ukuran unduhan tampil di aplikasi.",
             )
             if not ans:
                 self.preview_state_var.set(
@@ -2773,10 +2912,6 @@ class WhiteFloodApp(ctk.CTk):
 
         def _worker():
             try:
-                self._post_ui_event(
-                    lambda: (self.progress.set(0.15), self.spinner.set_progress(15))
-                )
-
                 if tool == TOOL_UPSCALE:
                     result = upscale_image_alpha_safe(
                         self._original,
@@ -3046,7 +3181,8 @@ class WhiteFloodApp(ctk.CTk):
                 APP_NAME,
                 f"Model AI '{internal_model}' belum terinstal di komputer.\n\n"
                 f"Apakah kamu ingin mengunduh model ini sekarang?\n"
-                f"(Ukuran file ±150–250 MB, mengunduh via internet).",
+                "Model ini berukuran besar dan membutuhkan internet. "
+                "Progress serta ukuran unduhan tampil di aplikasi.",
             )
             if not ans:
                 self.status_text.set("Pengunduhan model dibatalkan pengguna.")
