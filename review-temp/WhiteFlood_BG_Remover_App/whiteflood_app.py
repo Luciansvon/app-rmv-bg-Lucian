@@ -1,5 +1,5 @@
 """
-WhiteFlood BG Remover & Upscaler v2.6.1
+WhiteFlood BG Remover & Upscaler v2.6.2
 Built by Bima Chakti © 2026 Bima Chakti
 Aplikasi Windows Desktop untuk Foto Produk Furnitur (PNG Transparan).
 Dual Tools: Remove Background (Dimensi 100% Presisi) & Upscale (2x/4x/8x via Upscayl NCNN).
@@ -124,7 +124,7 @@ _rembg_session_threads = None
 # ═══════════════════════════════════════════════════════════
 
 APP_NAME = "WhiteFlood BG Remover"
-VERSION = "2.6.1"
+VERSION = "2.6.2"
 DEVELOPER_CREDIT = "Built by Bima Chakti\n\u00a9 2026 Bima Chakti"
 
 TOOL_WORKSPACE = "workspace"
@@ -162,6 +162,12 @@ REFINE_ORIGINAL = "Original (Rekomendasi)"
 REFINE_SOFT = "Soft (Pinggiran Halus)"
 REFINE_ALPHA_MATTE = "Alpha Matte (Deteksi Rambut)"
 REMOVE_BG_INFERENCE_PHASE = "Menjalankan AI lokal untuk menghitung mask objek..."
+MODEL_PREPARE_PHASE = "Menyiapkan model AI lokal..."
+MODEL_CONNECT_PHASE = "Menghubungkan ke server model..."
+MODEL_LOAD_PHASE = "Memverifikasi unduhan dan memuat model AI lokal..."
+MODEL_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+MODEL_CONNECT_TIMEOUT_SECONDS = 15
+MODEL_READ_TIMEOUT_SECONDS = 30
 AGGRESSIVE_THRESHOLD_RELAXATION = 20
 
 C = {
@@ -598,6 +604,39 @@ class _ModelDownloadProgress:
             self._emit(force=True)
 
 
+def _model_phase(message):
+    return {"kind": "phase_indeterminate", "message": message}
+
+
+def _friendly_model_download_error(model_name, error):
+    detail = str(error).strip() or error.__class__.__name__
+    connection_markers = (
+        "connection",
+        "disconnected",
+        "timed out",
+        "timeout",
+        "proxy",
+        "ssl",
+        "certificate",
+        "name resolution",
+        "temporary failure",
+        "github.com",
+        "status code 403",
+        "status code 407",
+    )
+    if any(marker in detail.lower() for marker in connection_markers):
+        return (
+            f"Gagal mengunduh model '{model_name}' karena server model tidak dapat dijangkau.\n\n"
+            "Cek koneksi internet. Jika memakai jaringan kantor, minta admin mengizinkan "
+            "github.com dan release-assets.githubusercontent.com pada firewall/proxy, lalu klik "
+            "'Proses Ulang'.\n\n"
+            f"Folder model: {Path.home() / '.u2net'}\n"
+            "Cek lewat PowerShell: Get-ChildItem \"$env:USERPROFILE\\.u2net\" -Force\n"
+            f"Detail teknis: {detail}"
+        )
+    return f"Gagal memuat model '{model_name}': {detail}"
+
+
 class _UiEventQueue:
     """Thread-safe bridge for worker callbacks to the Tk main thread."""
 
@@ -663,18 +702,34 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None, onnx_threa
     for attempt in range(1, max_retries + 1):
         try:
             if status_cb:
-                if attempt > 1:
-                    status_cb(f"Mencoba ulang unduhan model '{model_name}' ({attempt}/{max_retries})")
+                if is_model_downloaded(model_name):
+                    status_cb(_model_phase(MODEL_PREPARE_PHASE))
+                elif attempt > 1:
+                    status_cb(_model_phase(
+                        f"Mencoba ulang koneksi model ({attempt}/{max_retries})..."
+                    ))
                 else:
-                    status_cb(f"Menyiapkan unduhan model '{model_name}'")
+                    status_cb(_model_phase(MODEL_CONNECT_PHASE))
 
             original_retrieve = pooch.retrieve
 
             def retrieve_with_ui_progress(*args, **kwargs):
                 if status_cb and kwargs.get("progressbar") is True:
                     kwargs = dict(kwargs)
-                    kwargs["progressbar"] = _ModelDownloadProgress(status_cb, model_name)
-                return original_retrieve(*args, **kwargs)
+                    progress = _ModelDownloadProgress(status_cb, model_name)
+                    kwargs["progressbar"] = False
+                    kwargs["downloader"] = pooch.HTTPDownloader(
+                        progressbar=progress,
+                        chunk_size=MODEL_DOWNLOAD_CHUNK_BYTES,
+                        timeout=(
+                            MODEL_CONNECT_TIMEOUT_SECONDS,
+                            MODEL_READ_TIMEOUT_SECONDS,
+                        ),
+                    )
+                result = original_retrieve(*args, **kwargs)
+                if status_cb:
+                    status_cb(_model_phase(MODEL_LOAD_PHASE))
+                return result
 
             pooch.retrieve = retrieve_with_ui_progress
             try:
@@ -685,22 +740,13 @@ def _get_rembg_session(model_name="birefnet-massive", status_cb=None, onnx_threa
             _rembg_model_name = model_name
             _rembg_session_threads = selected_threads
 
-            if status_cb:
-                status_cb(f"Model '{model_name}' siap")
-
             return _rembg_session
         except Exception as e:
             last_err = e
             if attempt < max_retries:
                 time.sleep(1.5)
 
-    err_msg = str(last_err)
-    if any(k in err_msg for k in ("Connection", "RemoteDisconnected", "time out", "timed out", "Disconnected")):
-        raise RuntimeError(
-            f"Koneksi internet terputus saat mengunduh model '{model_name}'.\n\n"
-            f"Silakan pastikan koneksi internet stabil lalu klik 'Proses Ulang' untuk mencoba lagi."
-        )
-    raise RuntimeError(f"Gagal memuat model '{model_name}': {err_msg}")
+    raise RuntimeError(_friendly_model_download_error(model_name, last_err))
 
 
 def _get_realesrgan_paths():
@@ -779,7 +825,7 @@ def ai_remove_bg(img, edge_smooth=0, erode_size=0, model_name="birefnet-massive"
     rgba = img.convert("RGBA")
 
     if status_cb:
-        status_cb(5.0)
+        status_cb(_model_phase(MODEL_PREPARE_PHASE))
     profile = get_processing_profile(processing_profile) if processing_profile else None
     session = _get_rembg_session(
         model_name,
@@ -2866,10 +2912,6 @@ class WhiteFloodApp(ctk.CTk):
 
         def _worker():
             try:
-                self._post_ui_event(
-                    lambda: (self.progress.set(0.15), self.spinner.set_progress(15))
-                )
-
                 if tool == TOOL_UPSCALE:
                     result = upscale_image_alpha_safe(
                         self._original,

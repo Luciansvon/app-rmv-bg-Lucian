@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1"><img src="https://img.shields.io/github/v/release/Luciansvon/app-rmv-bg-Lucian?label=latest%20release" alt="Latest release"></a>
+  <a href="https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.2"><img src="https://img.shields.io/github/v/release/Luciansvon/app-rmv-bg-Lucian?label=latest%20release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="Windows">
   <img src="https://img.shields.io/badge/processing-local%20first-2E8B57" alt="Local-first processing">
 </p>
@@ -63,7 +63,7 @@ WhiteFlood is a local-first desktop workbench for furniture/catalog media. It ke
 
 For the easiest setup, download the Windows executable from the latest release:
 
-**[Download WhiteFlood v2.6.1](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.6.1/WhiteFlood_BG_Remover.exe)**
+**[Download WhiteFlood v2.6.2](https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/download/v2.6.2/WhiteFlood_BG_Remover.exe)**
 
 The release asset is a one-file, windowed build. Python is not required for the release executable. On first use, missing AI models are confirmed and downloaded to the user model folder with progress shown inside the app. Vectorize uses the bundled VTracer package and does not download an AI model.
 
@@ -71,7 +71,7 @@ The release asset is a one-file, windowed build. Python is not required for the 
 
 ## Spesifikasi device minimum
 
-Angka di bawah adalah baseline praktis untuk release v2.6.1, bukan hasil benchmark lintas semua tipe komputer.
+Angka di bawah adalah baseline praktis untuk release v2.6.2, bukan hasil benchmark lintas semua tipe komputer.
 
 | Komponen | Minimum / catatan |
 |---|---|
@@ -99,7 +99,27 @@ Jika semua mode AI dipakai setidaknya sekali, file model yang perlu tersedia ada
 - Model `rembg` disimpan di `%USERPROFILE%\\.u2net`.
 - Model LaMa disimpan di `%LOCALAPPDATA%\\WhiteFlood\\models`.
 - Model Upscale tidak diunduh saat pertama kali dipakai. `realesrgan-x4plus` sudah dibundel di EXE; seluruh file model Real-ESRGAN yang ada di bundle berjumlah sekitar 46.27 MB (44.12 MiB).
-- Ukuran EXE release v2.6.1 sekitar 281.06 MiB (294,711,783 bytes). Jadi kebutuhan dasar setelah semua model terunduh sekitar **4.28 GB (3.99 GiB)**, belum termasuk file input, output, dan file sementara.
+- Ukuran EXE release v2.6.2 adalah 281.06 MiB (294,709,318 bytes). Kebutuhan dasar setelah semua model terunduh tetap sekitar **4.28 GB (3.99 GiB)**, belum termasuk file input, output, dan file sementara.
+
+### Jika unduhan model tidak bergerak
+
+- Saat aplikasi masih menghubungkan server, progress bergerak tanpa angka persen palsu.
+- Persentase dan ukuran baru tampil setelah server mulai mengirim data.
+- Model Remove Background disimpan di `%USERPROFILE%\\.u2net`, bukan folder Downloads browser.
+- Jika jaringan kantor memblokir GitHub, minta admin mengizinkan `github.com` dan `release-assets.githubusercontent.com`, lalu klik `Proses Ulang`.
+
+Untuk memantau ukuran file lewat PowerShell tanpa mengubah file, jalankan:
+
+```powershell
+while ($true) {
+    Clear-Host
+    Get-ChildItem "$env:USERPROFILE\.u2net" -Force -ErrorAction SilentlyContinue |
+        Select-Object Name, @{Name="UkuranMB"; Expression={[math]::Round($_.Length / 1MB, 1)}}, LastWriteTime
+    Start-Sleep -Seconds 2
+}
+```
+
+Tekan `Ctrl+C` untuk berhenti. Jika `UkuranMB` terus bertambah, unduhan masih berjalan. Jika tidak berubah lalu aplikasi menampilkan timeout, cek firewall/proxy kantor.
 
 Angka model Remove Background mengikuti model yang dipakai `rembg` 2.0.78 saat audit pada 2026-08-10. Dependency di `requirements.txt` masih mengizinkan versi `rembg` yang lebih baru, sehingga ukuran model bisa berubah pada versi mendatang.
 

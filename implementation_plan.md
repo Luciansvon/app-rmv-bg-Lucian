@@ -373,3 +373,61 @@ source aktif, regression test, dokumentasi, build, push, dan release v2.6.1.
 - Branch: `codex/fix-remove-bg-progress` sudah dipush ke origin.
 - Release: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1`.
 - Asset GitHub berstatus `uploaded`; digest cocok dengan SHA-256 lokal.
+
+## 2026-08-11 - Fix unduhan model mentok 15% dan release v2.6.2
+
+Status: Implementasi, test, smoke download, build, dan smoke start EXE lulus;
+commit/push/release sedang berjalan.
+
+### Fakta dan root cause yang sudah terbukti
+
+- Worker memaksa progress visual ke `15%` sebelum koneksi atau unduhan model
+  dimulai. Angka ini bukan persentase byte unduhan.
+- Saat koneksi ke host model belum menghasilkan respons/data, UI tetap
+  menampilkan `15%`, sehingga terlihat seperti unduhan macet dan tidak memberi
+  tahu apakah aplikasi sedang menghubungi server atau benar-benar menerima data.
+- Model BiRefNet diambil oleh `rembg 2.0.78` dari GitHub Releases melalui
+  `pooch 1.9.0`. Pooch baru dapat mengisi total byte setelah respons HTTP
+  diterima; timeout bawaannya 30 detik.
+- Runtime download internet pada EXE v2.6.1 sebelumnya memang belum pernah
+  diverifikasi dan tercatat sebagai gate pending di worklog.
+
+### Scope patch
+
+1. Hapus angka dummy `15%` dari awal worker Remove Background.
+2. Tampilkan fase indeterminate yang jujur saat aplikasi menyiapkan model dan
+   menghubungkan ke server; progress determinate baru muncul setelah total byte
+   unduhan tersedia.
+3. Pertahankan adapter custom progress Pooch, tetapi tambahkan event status
+   yang membedakan menghubungkan server, mengunduh byte, verifikasi file, dan
+   memuat model lokal.
+4. Perjelas error koneksi khusus lingkungan kantor: internet putus, GitHub
+   diblokir firewall/proxy, timeout, serta lokasi model `%USERPROFILE%\\.u2net`.
+5. Tambahkan regression test agar angka 15% palsu tidak kembali dan urutan event
+   download dapat diuji tanpa mengunduh model 972 MB.
+6. Update `docs/ERROR_SOLUTIONS.md`, `docs/WORKLOG.md`, dan README bila teks
+   troubleshooting pengguna terdampak.
+
+### Acceptance criteria
+
+- Sebelum byte pertama diterima, UI menampilkan status bergerak tanpa mengklaim
+  persentase tertentu.
+- Setelah header/byte tersedia, UI menampilkan persen dan ukuran
+  terunduh/total dari downloader asli.
+- Koneksi gagal tidak diam selamanya di 15%; pengguna mendapat pesan penyebab
+  yang masuk akal dan langkah lanjut.
+- Model valid tetap disimpan di `%USERPROFILE%\\.u2net` dan pemrosesan gambar
+  tetap lokal setelah model tersedia.
+- Syntax check, semua unittest, diff check, build EXE, pemeriksaan artifact dan
+  SHA-256 lulus sebelum release.
+- Runtime download nyata diuji memakai file kecil melalui downloader yang sama.
+  Download penuh BiRefNet/GUI di komputer kantor tetap dicatat sebagai bukti
+  terpisah bila tidak bisa dijalankan dari environment ini.
+
+### Release
+
+- Versi patch yang diusulkan: `v2.6.2`.
+- Setelah gate lulus: update versi/link dokumentasi, commit, push branch aktif,
+  buat GitHub Release `v2.6.2`, upload EXE, lalu cocokkan ukuran dan SHA-256
+  asset GitHub dengan artifact lokal.
+- Release tidak akan di-merge ke branch lain kecuali diminta.

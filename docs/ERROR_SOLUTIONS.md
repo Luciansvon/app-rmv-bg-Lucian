@@ -458,6 +458,76 @@ inferensi dan menguji perpindahan progress bar kembali ke determinate.
 - `tests/test_features.py`
 - `docs/ARCHITECTURE.md`
 
+## ERR-011 - Unduhan model terlihat berhenti di 15%
+
+Tanggal: 2026-08-11
+Versi: 2.6.2
+Area: Remove Background | Model Download
+Status: Diperbaiki; release sedang dipublikasikan
+
+### Gejala
+
+- Pada pemakaian pertama Remove Background, progress terlihat berhenti di 15%.
+- UI belum menampilkan ukuran byte unduhan sehingga pengguna tidak tahu apakah
+  server belum tersambung, jaringan kantor memblokir GitHub, atau file sedang
+  diunduh.
+
+### Root cause
+
+- Worker mengatur progress ke 15% sebelum koneksi dan unduhan dimulai. Nilai
+  tersebut adalah angka dummy, bukan progress byte dari server.
+- Total byte Pooch baru tersedia setelah respons HTTP diterima. Selama koneksi
+  belum memberi respons, UI mempertahankan angka dummy tersebut.
+- Runtime unduhan internet nyata pada EXE v2.6.1 belum pernah melewati gate
+  smoke test dan sudah tercatat sebagai pemeriksaan pending.
+
+### Solusi
+
+- Menghapus angka dummy 15% dan angka awal 5% dari jalur model.
+- Menampilkan fase indeterminate saat menyiapkan model dan menghubungkan server.
+- Memakai progress byte asli setelah header HTTP tersedia, dengan chunk 64 KiB,
+  connect timeout 15 detik, read timeout 30 detik, dan maksimal tiga percobaan.
+- Menampilkan fase verifikasi/pemuatan model setelah file selesai diterima.
+- Error koneksi menjelaskan kemungkinan firewall/proxy kantor, host
+  `github.com` dan `release-assets.githubusercontent.com` yang perlu diizinkan,
+  lokasi `%USERPROFILE%\\.u2net`, dan detail teknis aktual.
+- README menyediakan perintah PowerShell read-only untuk memantau nama, ukuran,
+  dan waktu perubahan file model setiap dua detik.
+
+### Perlindungan regresi
+
+- Test memastikan source tidak lagi memiliki progress dummy 15%/5%.
+- Test memastikan downloader memakai adapter UI, chunk 64 KiB, dan timeout
+  eksplisit.
+- Test memastikan progress memakai byte asli dan pesan error jaringan kantor
+  berisi langkah lanjut yang bisa dilakukan.
+
+### Bukti verifikasi aktual
+
+- Syntax check source aktif lulus.
+- `python -m unittest discover -s tests -v` lulus: 25 test.
+- Smoke download HTTPS kecil melalui `pooch.HTTPDownloader` dan adapter UI yang
+  sama selesai serta menghasilkan event 100%.
+- Endpoint model BiRefNet-Massive merespons HTTP 200 dengan ukuran 972,666,916
+  bytes melalui `release-assets.githubusercontent.com`.
+- Build PyInstaller selesai dengan `Build complete`; EXE berukuran 294,709,318
+  bytes dan SHA-256
+  `51DAE4515C8166AAA556F36EEDECB17F732F9851152524C4ABEEB6B440C826AB`.
+- Smoke start EXE selama 15 detik berhasil; proses tetap hidup dan ditutup setelah
+  pemeriksaan. Rendering GUI dan unduhan penuh model belum diuji.
+
+### Gate yang belum selesai pada saat catatan ini dibuat
+
+- Unduhan penuh BiRefNet pada PC kantor dan upload GitHub Release v2.6.2.
+
+### File terdampak
+
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app.py`
+- `tests/test_features.py`
+- `README.md`
+- `docs/ERROR_SOLUTIONS.md`
+- `docs/WORKLOG.md`
+
 ## ERR-010 - Audit bugfix: alpha pipeline, state file, dan kontrol mode
 
 Tanggal: 2026-08-10

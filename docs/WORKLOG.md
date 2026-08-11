@@ -422,3 +422,41 @@ static/unit verification, build, dan push selesai.
   294,711,783 bytes.
 - Digest GitHub `sha256:ce1fae8d148ac540df5ead7aeb746b7f93126e5da0ab69e593eca040784809a`
   cocok dengan hash lokal.
+
+---
+
+## 2026-08-11 - Fix unduhan model 15% dan persiapan v2.6.2
+
+Status: source patch, test, build, dan smoke start EXE selesai; release sedang berjalan.
+
+### Perubahan
+
+- Menghapus progress awal dummy 15% pada worker dan 5% sebelum model session.
+- Menambahkan fase menghubungkan server, progress byte asli, verifikasi file,
+  dan pemuatan model lokal.
+- Download Pooch memakai chunk 64 KiB, connect timeout 15 detik, read timeout
+  30 detik, serta retry maksimal tiga kali.
+- Error menjelaskan kemungkinan firewall/proxy kantor dan lokasi model
+  `%USERPROFILE%\\.u2net`.
+- README menambahkan monitor PowerShell read-only untuk ukuran file model.
+- Menaikkan versi aplikasi menjadi v2.6.2.
+
+### Bukti verifikasi aktual
+
+- Syntax check source aktif lulus.
+- `python -m unittest discover -s tests -v` lulus: 25 test.
+- Smoke download file kecil dari repository resmi Pooch melalui HTTPS selesai;
+  adapter UI menerima event progress sampai 100%.
+- Endpoint BiRefNet-Massive merespons HTTP 200 dari
+  `release-assets.githubusercontent.com` dengan content-length 972,666,916 byte.
+- Build PyInstaller selesai dengan `Build complete`.
+- Artifact: `review-temp/WhiteFlood_BG_Remover_App/dist/WhiteFlood_BG_Remover.exe`,
+  dibuat 2026-08-11 09:33:56, ukuran 294,709,318 bytes (281.06 MiB), SHA-256
+  `51DAE4515C8166AAA556F36EEDECB17F732F9851152524C4ABEEB6B440C826AB`.
+- Smoke start EXE selama 15 detik berhasil; proses tetap hidup dan ditutup setelah
+  pemeriksaan.
+
+### Gate berjalan
+
+- Final diff check, commit, push, dan GitHub Release v2.6.2.
+- Rendering GUI serta unduhan penuh BiRefNet pada PC kantor belum diverifikasi.

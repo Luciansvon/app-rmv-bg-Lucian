@@ -41,9 +41,13 @@ from features.watermark.media import (  # noqa: E402
 from features.watermark.video import VideoProcessor, VideoError  # noqa: E402
 import whiteflood_app as app_module  # noqa: E402
 from whiteflood_app import (  # noqa: E402
+    MODEL_CONNECT_PHASE,
+    MODEL_PREPARE_PHASE,
     REMOVE_BG_INFERENCE_PHASE,
     WhiteFloodApp,
+    _ModelDownloadProgress,
     _UiEventQueue,
+    _friendly_model_download_error,
     format_duration,
 )
 
@@ -182,8 +186,90 @@ class FeatureContractTests(unittest.TestCase):
             result = app_module.ai_remove_bg(source, status_cb=events.append)
 
         self.assertEqual(result.size, source.size)
+        self.assertEqual(
+            events[0],
+            {"kind": "phase_indeterminate", "message": MODEL_PREPARE_PHASE},
+        )
         self.assertEqual(events[1]["kind"], "phase_indeterminate")
         self.assertEqual(events[-1], 100.0)
+
+    def test_model_progress_reports_real_bytes_without_dummy_percent(self):
+        events = []
+        progress = _ModelDownloadProgress(events.append, "birefnet-massive")
+        progress.total = 100
+
+        progress.update(15)
+        progress._last_emit_at = 0
+        progress.update(35)
+
+        self.assertEqual(events[0]["percent"], 15)
+        self.assertEqual(events[-1]["downloaded"], 50)
+        self.assertEqual(events[-1]["total"], 100)
+
+    def test_model_connection_error_explains_office_firewall(self):
+        message = _friendly_model_download_error(
+            "birefnet-massive",
+            RuntimeError("HTTPSConnectionPool: Read timed out"),
+        )
+
+        self.assertIn("jaringan kantor", message)
+        self.assertIn("github.com", message)
+        self.assertIn(".u2net", message)
+        self.assertIn("Get-ChildItem", message)
+
+    def test_rembg_download_uses_ui_progress_and_explicit_timeouts(self):
+        events = []
+        fake_session = object()
+
+        class FakeSessionOptions:
+            pass
+
+        fake_ort = types.ModuleType("onnxruntime")
+        fake_ort.SessionOptions = FakeSessionOptions
+        fake_rembg = types.ModuleType("rembg")
+
+        def fake_new_session(*_args, **_kwargs):
+            import pooch
+
+            pooch.retrieve(
+                "https://example.invalid/model.onnx",
+                "md5:fake",
+                progressbar=True,
+            )
+            return fake_session
+
+        fake_rembg.new_session = fake_new_session
+        app_module._rembg_session = None
+        app_module._rembg_model_name = None
+        app_module._rembg_session_threads = None
+        try:
+            with mock.patch.dict(
+                sys.modules,
+                {"rembg": fake_rembg, "onnxruntime": fake_ort},
+            ), mock.patch("pooch.retrieve") as original_retrieve:
+                result = app_module._get_rembg_session(
+                    "birefnet-massive",
+                    status_cb=events.append,
+                    onnx_threads=2,
+                )
+
+            self.assertIs(result, fake_session)
+            downloader = original_retrieve.call_args.kwargs["downloader"]
+            self.assertEqual(downloader.chunk_size, 64 * 1024)
+            self.assertEqual(downloader.kwargs["timeout"], (15, 30))
+            self.assertIsInstance(downloader.progressbar, _ModelDownloadProgress)
+            self.assertEqual(events[-1]["kind"], "phase_indeterminate")
+        finally:
+            app_module._rembg_session = None
+            app_module._rembg_model_name = None
+            app_module._rembg_session_threads = None
+
+    def test_remove_background_worker_has_no_dummy_15_percent(self):
+        source = (APP_DIR / "whiteflood_app.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("self.progress.set(0.15)", source)
+        self.assertNotIn("status_cb(5.0)", source)
+        self.assertIn(MODEL_CONNECT_PHASE, source)
 
     def test_progress_mode_switches_back_after_indeterminate_phase(self):
         class FakeProgress:

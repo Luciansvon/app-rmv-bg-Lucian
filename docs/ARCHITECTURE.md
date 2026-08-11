@@ -95,7 +95,7 @@ review-temp/WhiteFlood_BG_Remover_App/
 - `SplitSliderPreview` menampilkan gambar asli dan hasil sebelum/sesudah. Bitmap display dan checkerboard di-cache berdasarkan ukuran canvas; drag hanya menjadwalkan satu redraw ringan setiap frame.
 - `active_tool` membedakan Workspace, Remove Background, Upscale, Vectorize, serta mode Watermark Image/Video.
 - Tombol proses, simpan, dan batch dikunci melalui state `_processing` agar proses ganda tidak berjalan bersamaan.
-- Adapter `_ModelDownloadProgress` meneruskan byte download `pooch` ke progress bar dan circular progress UI sehingga persentase serta ukuran model terlihat di aplikasi.
+- Adapter `_ModelDownloadProgress` meneruskan byte download `pooch` ke progress bar dan circular progress UI. Fase koneksi memakai progress indeterminate; persentase baru tampil setelah total byte HTTP tersedia. Jalur ini memakai chunk 64 KiB, connect timeout 15 detik, read timeout 30 detik, dan retry maksimal tiga kali.
 - Downloader `features/model_download.py` menyimpan LaMa di folder user yang writable; dialog konfirmasi muncul sebelum download pertama.
 - `_UiEventQueue` menerima callback dari worker tanpa memanggil Tkinter langsung; main thread menguras queue berkala sehingga download tetap berjalan saat window diminimize.
 - Worker single-image, watermark, vectorize, dan batch dilacak oleh `WhiteFloodApp`; close tetap mengirim cancel lalu menunggu worker berhenti sebelum window dihancurkan.
@@ -202,13 +202,13 @@ Jangan menambah engine berat aktif paralel, cache model tambahan, atau proses ba
 Build release terakhir yang dicek:
 
 - Command: `python build_exe.py` dengan konfigurasi PyInstaller one-file windowed.
-- Output: `WhiteFlood_BG_Remover.exe` pada asset release `v2.6.1`, 294,711,783 bytes, dibuat 2026-08-10 17:25:16.
+- Output: `WhiteFlood_BG_Remover.exe` untuk release `v2.6.2`, 294,709,318 bytes, dibuat 2026-08-11 09:33:56.
 - Mode: PyInstaller `--onefile --windowed`.
-- SHA-256: `CE1FAE8D148AC540DF5EAD7AEB746B7F93126E5DA0AB69E593ECA040784809A`.
-- Release URL: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.1`.
+- SHA-256: `51DAE4515C8166AAA556F36EEDECB17F732F9851152524C4ABEEB6B440C826AB`.
+- Release URL target: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.2`.
 - Dependency build: VTracer 0.6.15, ONNX Runtime 1.28.0, PyInstaller 6.21.0.
 - `Analysis-00.toc`, `PKG-00.toc`, dan `EXE-00.toc` mencatat `ffmpeg/ffmpeg.exe` serta `ffmpeg/ffprobe.exe`.
-- Hasil runtime EXE belum diuji; warning log berisi 723 baris, termasuk unresolved `tbb12.dll` dari optional dependency numba.
+- Smoke start EXE selama 15 detik lulus. Rendering GUI dan unduhan penuh model belum diuji; warning build tetap mencatat unresolved `tbb12.dll` dari optional dependency numba.
 
 ## Aturan arsitektur yang dikunci
 
