@@ -38,9 +38,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-:: Bersihkan build lama
+:: Bersihkan cache build lama tanpa menghapus asset lain di folder dist
 if exist build rmdir /s /q build
-if exist dist rmdir /s /q dist
 if exist WhiteFlood_BG_Remover.spec del /f /q WhiteFlood_BG_Remover.spec
 
 :: Build EXE via build_exe.py

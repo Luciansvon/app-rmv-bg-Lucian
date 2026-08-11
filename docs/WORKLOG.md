@@ -427,7 +427,7 @@ static/unit verification, build, dan push selesai.
 
 ## 2026-08-11 - Fix unduhan model 15% dan persiapan v2.6.2
 
-Status: source patch, test, build, dan smoke start EXE selesai; release sedang berjalan.
+Status: source patch, test, build, smoke start EXE, push, dan release publik v2.6.2 selesai.
 
 ### Perubahan
 
@@ -439,6 +439,9 @@ Status: source patch, test, build, dan smoke start EXE selesai; release sedang b
 - Error menjelaskan kemungkinan firewall/proxy kantor dan lokasi model
   `%USERPROFILE%\\.u2net`.
 - README menambahkan monitor PowerShell read-only untuk ukuran file model.
+- README menambahkan fallback instalasi offline empat model BiRefNet beserta
+  nama file tujuan dan MD5 `rembg 2.0.78`; pemindahan file tetap mengikuti
+  kebijakan keamanan kantor.
 - Menaikkan versi aplikasi menjadi v2.6.2.
 
 ### Bukti verifikasi aktual
@@ -456,7 +459,99 @@ Status: source patch, test, build, dan smoke start EXE selesai; release sedang b
 - Smoke start EXE selama 15 detik berhasil; proses tetap hidup dan ditutup setelah
   pemeriksaan.
 
-### Gate berjalan
+### Bukti release
 
-- Final diff check, commit, push, dan GitHub Release v2.6.2.
-- Rendering GUI serta unduhan penuh BiRefNet pada PC kantor belum diverifikasi.
+- Commit patch: `b59bf6e` pada branch `codex/fix-remove-bg-progress`.
+- Release: https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.2
+- Asset `WhiteFlood_BG_Remover.exe` berstatus `uploaded`, ukuran 294,709,318
+  bytes, dan digest GitHub
+  `sha256:51dae4515c8166aaa556f36eedecb17f732f9851152524c4abeeb6b440c826ab`
+  cocok dengan artifact lokal.
+
+### Batas verifikasi
+
+- Rendering GUI serta unduhan penuh BiRefNet pada jaringan PC kantor belum
+  diverifikasi dari environment ini.
+
+---
+
+## 2026-08-11 - Audit seluruh app dan persiapan release v2.6.3
+
+Status: implementasi, runtime smoke test source, build staging, smoke EXE,
+push, dan release publik v2.6.3 selesai.
+
+### Perubahan
+
+- Menambahkan Truststore Windows dan fallback BITS/SystemDefault proxy untuk
+  download model pada jaringan kantor.
+- Menyatukan lokasi model checker dan `rembg` ke `%USERPROFILE%\.u2net`.
+- Menambahkan tombol `Pasang Model dari File` dengan verifikasi hash, copy
+  aman, atomic replace, dan pemakaian tanpa restart.
+- Mem-pin `rembg 2.0.78`, Pooch 1.9.0, Truststore 0.10.4, serta URL/hash model
+  LaMa OpenCV Zoo.
+- Mengubah progress download-verifikasi, Remove Background, Watermark,
+  Upscale, dan batch agar fase berikutnya tidak membuat angka mundur.
+- Mengubah build supaya `dist/` tidak dibersihkan seluruhnya dan menyediakan
+  output staging terisolasi.
+- Menaikkan versi aplikasi menjadi v2.6.3.
+
+### Bukti verifikasi source/runtime
+
+- Syntax check source, downloader, build script, dan test lulus.
+- `python -m unittest discover -s tests -v` lulus: 35 test.
+- `git diff --check` lulus; warning hanya normalisasi LF/CRLF Git.
+- Truststore runtime aktif.
+- BITS mengunduh fixture resmi OpenCV Zoo 7.313 byte dan selesai 100%.
+- BiRefNet-Massive 972.666.916 byte cocok dengan MD5 resmi dan berhasil
+  menjalankan inferensi nyata pada gambar 96x96: output RGBA, dimensi tetap,
+  alpha 0..255.
+- Real-ESRGAN Vulkan berhasil menjalankan Upscale 2x pada PNG transparan:
+  output RGBA 32x32, alpha 0..255, progress monotonik sampai 100%.
+- VTracer nyata menghasilkan SVG valid 482 byte dengan progress
+  10/25/85/100.
+- LaMa SHA-256 cocok dengan pointer LFS OpenCV Zoo; runtime Image 64x64 dan
+  Video 32x32 dua frame selesai, dimensi tetap, serta progress mencapai total.
+- GUI source berhasil dibuat; kontrol model tampil, lalu pergantian
+  White Background kembali ke Furniture Quality berhasil tanpa TclError.
+
+### Bukti build
+
+- Build awal staging gagal sebelum packaging karena path asset relatif ikut
+  berpindah ke folder spec. `build_exe.py` diperbaiki memakai path asset absolut.
+- Build kedua lulus, lalu source mendapat edge-case fix transfer HTTP tidak
+  lengkap dan perbaikan status awal inferensi dari bukti screenshot user.
+  Build UI-final PyInstaller 6.21.0 lulus dalam 208,5 detik pada Python 3.12.10.
+- Artifact final: `WhiteFlood_BG_Remover.exe`, 294.769.390 byte (281,11 MiB),
+  dibuat 2026-08-11 11:18:37.
+- SHA-256:
+  `A556A60F5A819224C0247CE92396F4F9135B853696FBCA95BCBE5174FACE3E6D`.
+- Archive inspection membuktikan FFmpeg/FFprobe, Real-ESRGAN NCNN,
+  rembg 2.0.78, Truststore 0.10.4, dan VTracer 0.6.15 masuk bundle.
+- Smoke start EXE selama 15 detik lulus; proses responsif dan ditutup setelah
+  pemeriksaan.
+- Screenshot user membuktikan model Furniture Quality terbaca (tombol berubah
+  menjadi `Ganti / Verifikasi Model dari File`) dan RAM naik bertahap sampai
+  sekitar 3 GB. Overlay awal 0% diganti ke fase indeterminate sebelum worker
+  berat dimulai.
+- Salinan lokal versioned disimpan sebagai
+  `dist/WhiteFlood_BG_Remover-v2.6.3.exe`; EXE dan ZIP v2.6.2 tidak dihapus.
+
+### Bukti release
+
+- Commit implementasi: `b1d92ed`.
+- Commit status inferensi dari screenshot user: `bc4b5c7`.
+- Branch `codex/fix-remove-bg-progress` dipush ke origin.
+- Tag `v2.6.3` mengarah ke `bc4b5c7feb5bcfa3ac0bdd3f2b9fb011f562ddd8`.
+- Release publik:
+  https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3
+- Asset `WhiteFlood_BG_Remover.exe` berstatus `uploaded`, ukuran 294.769.390
+  byte, dan digest GitHub
+  `sha256:a556a60f5a819224c0247ce92396f4f9135b853696fbca95bcbe5174face3e6d`
+  cocok dengan artifact lokal.
+- Release dipublikasikan 2026-08-11 04:23:12 UTC dan bukan prerelease.
+
+### Batas verifikasi
+
+- Jaringan/proxy PC kantor tidak tersedia di laptop build. Auto fallback telah
+  diuji memakai BITS nyata, tetapi keberhasilan melewati policy kantor tetap
+  perlu dites pada PC tersebut.

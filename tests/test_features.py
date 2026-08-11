@@ -1,4 +1,6 @@
 import json
+import hashlib
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -30,7 +32,12 @@ from features.performance import (  # noqa: E402
     get_processing_profile,
     processing_profile_names,
 )
-from features.model_download import ModelSpec, download_model  # noqa: E402
+from features.model_download import (  # noqa: E402
+    ModelDownloadError,
+    ModelSpec,
+    download_model,
+    install_model_file,
+)
 from features.watermark.inpaint import LamaInpaintService  # noqa: E402
 from features.watermark.mask_canvas import MaskCanvas  # noqa: E402
 from features.watermark.media import (  # noqa: E402
@@ -49,6 +56,9 @@ from whiteflood_app import (  # noqa: E402
     _UiEventQueue,
     _friendly_model_download_error,
     format_duration,
+    map_batch_progress_event,
+    map_progress_event,
+    next_upscale_progress,
 )
 
 
@@ -90,6 +100,68 @@ class FeatureContractTests(unittest.TestCase):
         self.assertEqual(format_duration(0), "00:00:00")
         self.assertEqual(format_duration(65), "00:01:05")
         self.assertEqual(format_duration(3661), "01:01:01")
+
+    def test_rembg_cache_path_is_forced_to_documented_user_folder(self):
+        self.assertEqual(
+            Path(os.environ["U2NET_HOME"]),
+            app_module.WHITEFLOOD_REMBG_HOME,
+        )
+        self.assertEqual(
+            app_module.WHITEFLOOD_REMBG_HOME,
+            Path.home() / ".u2net",
+        )
+        self.assertNotIn("MODEL_CHECKSUM_DISABLED", os.environ)
+
+    def test_model_detection_requires_the_exact_selected_model(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = Path(temp_dir)
+            unrelated = model_dir / "unrelated.onnx"
+            unrelated.write_bytes(b"x" * 10)
+            with mock.patch.object(app_module, "WHITEFLOOD_REMBG_HOME", model_dir), \
+                    mock.patch.object(app_module, "REMBG_MODEL_MINIMUM_BYTES", 10):
+                self.assertFalse(app_module.is_model_downloaded("birefnet-massive"))
+                exact = model_dir / "birefnet-massive.onnx"
+                exact.write_bytes(b"x" * 10)
+                self.assertTrue(app_module.is_model_downloaded("birefnet-massive"))
+
+    def test_upscale_progress_never_moves_backward_across_ncnn_stages(self):
+        progress = 0.0
+        observed = []
+        for reported in (13, 90, 42, 100):
+            progress = next_upscale_progress(progress, reported, scale=4)
+            observed.append(progress)
+        self.assertEqual(observed, [13.0, 90.0, 90.0, 100.0])
+
+    def test_batch_progress_maps_each_file_into_one_monotonic_segment(self):
+        observed = [
+            map_batch_progress_event(100, 1, 2),
+            map_batch_progress_event(0, 2, 2),
+            map_batch_progress_event(25, 2, 2),
+            map_batch_progress_event(100, 2, 2),
+        ]
+        self.assertEqual(observed, [50.0, 50.0, 62.5, 100.0])
+        waiting = map_batch_progress_event(
+            {"kind": "phase_indeterminate", "message": "Memuat AI"},
+            2,
+            4,
+        )
+        self.assertEqual(waiting["kind"], "phase_progress")
+        self.assertEqual(waiting["percent"], 25)
+
+    def test_model_subphase_does_not_claim_whole_process_is_finished(self):
+        mapped = map_progress_event(
+            {
+                "kind": "model_download",
+                "percent": 100,
+                "downloaded": 100,
+                "total": 100,
+            },
+            0,
+            40,
+        )
+        self.assertEqual(mapped["percent"], 40)
+        self.assertEqual(mapped["downloaded"], 100)
+        self.assertEqual(map_progress_event(50, 40, 100), 70.0)
 
     def test_aggressive_white_background_mode_changes_near_white_removal(self):
         source = Image.new("RGB", (5, 5), (210, 210, 210))
@@ -270,6 +342,10 @@ class FeatureContractTests(unittest.TestCase):
         self.assertNotIn("self.progress.set(0.15)", source)
         self.assertNotIn("status_cb(5.0)", source)
         self.assertIn(MODEL_CONNECT_PHASE, source)
+        self.assertIn(
+            "self._show_processing_overlay(MODEL_PREPARE_PHASE, percent=None)",
+            source,
+        )
 
     def test_progress_mode_switches_back_after_indeterminate_phase(self):
         class FakeProgress:
@@ -301,6 +377,40 @@ class FeatureContractTests(unittest.TestCase):
                 ("configure", "determinate"),
             ],
         )
+
+    def test_switching_white_background_back_to_ai_restores_controls_safely(self):
+        class FakeMode:
+            def get(self):
+                return app_module.MODE_FURNITURE
+
+        class FakeWidget:
+            def __init__(self, managed=""):
+                self.managed = managed
+
+            def winfo_manager(self):
+                return self.managed
+
+            def pack_forget(self):
+                self.managed = ""
+
+            def pack(self, **kwargs):
+                before = kwargs.get("before")
+                if before is not None and not before.winfo_manager():
+                    raise RuntimeError("target widget belum dipasang")
+                self.managed = "pack"
+
+        app = object.__new__(WhiteFloodApp)
+        app.mode_var = FakeMode()
+        app.adv_section = FakeWidget("pack")
+        app.lbl_refine = FakeWidget("")
+        app.btn_install_rembg_model = FakeWidget("")
+        app.refine_dropdown = FakeWidget("")
+
+        app._toggle_flood_settings()
+
+        self.assertEqual(app.btn_install_rembg_model.winfo_manager(), "pack")
+        self.assertEqual(app.lbl_refine.winfo_manager(), "pack")
+        self.assertEqual(app.refine_dropdown.winfo_manager(), "pack")
 
     def test_bundled_ffmpeg_tools_are_present_and_runnable(self):
         for name in ("ffmpeg", "ffprobe"):
@@ -413,6 +523,130 @@ class FeatureContractTests(unittest.TestCase):
             self.assertEqual(destination.read_bytes(), b"test")
             self.assertEqual(events[-1]["percent"], 100)
             self.assertEqual(events[-1]["downloaded"], 4)
+            self.assertEqual(
+                [event["percent"] for event in events],
+                sorted(event["percent"] for event in events),
+            )
+            self.assertFalse(Path(temp_dir, "test.onnx.part").exists())
+
+    def test_manual_model_install_is_verified_atomic_and_keeps_source(self):
+        payload = b"verified-model-content"
+        digest = hashlib.sha256(payload).hexdigest()
+        events = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "downloaded.onnx"
+            target = root / "cache" / "birefnet-massive.onnx"
+            source.write_bytes(payload)
+            target.parent.mkdir()
+            target.write_bytes(b"old-valid-model")
+
+            installed = install_model_file(
+                source,
+                target,
+                known_hash=f"sha256:{digest}",
+                minimum_bytes=1,
+                status_cb=events.append,
+                label="Furniture Quality",
+            )
+
+            self.assertEqual(installed.read_bytes(), payload)
+            self.assertEqual(source.read_bytes(), payload)
+            percents = [event["percent"] for event in events]
+            self.assertEqual(percents, sorted(percents))
+            self.assertEqual(percents[-1], 100)
+            self.assertEqual(list(target.parent.glob("*.part")), [])
+
+    def test_invalid_manual_model_never_overwrites_existing_model(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "wrong.onnx"
+            target = root / "birefnet-massive.onnx"
+            source.write_bytes(b"wrong-model")
+            target.write_bytes(b"working-model")
+
+            with self.assertRaises(ModelDownloadError):
+                install_model_file(
+                    source,
+                    target,
+                    known_hash="sha256:" + ("0" * 64),
+                    minimum_bytes=1,
+                )
+
+            self.assertEqual(target.read_bytes(), b"working-model")
+
+    def test_office_network_failure_uses_windows_fallback(self):
+        spec = ModelSpec(
+            key="test",
+            label="Test model",
+            filename="test.onnx",
+            relative_path=Path("test.onnx"),
+            url="https://example.invalid/test.onnx",
+            minimum_bytes=1,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / spec.filename
+            with mock.patch(
+                "features.model_download.persistent_model_dir",
+                return_value=Path(temp_dir),
+            ), mock.patch(
+                "features.model_download.urllib.request.urlopen",
+                side_effect=OSError("certificate verify failed"),
+            ), mock.patch(
+                "features.model_download.should_try_windows_fallback",
+                return_value=True,
+            ), mock.patch(
+                "features.model_download.download_with_bits",
+                return_value=destination,
+            ) as fallback:
+                result = download_model(spec)
+
+            self.assertEqual(result, destination)
+            fallback.assert_called_once()
+
+    def test_incomplete_primary_download_also_uses_windows_fallback(self):
+        class IncompleteResponse:
+            headers = {"Content-Length": "5"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _size):
+                if hasattr(self, "sent"):
+                    return b""
+                self.sent = True
+                return b"four"
+
+        spec = ModelSpec(
+            key="test",
+            label="Test model",
+            filename="test.onnx",
+            relative_path=Path("test.onnx"),
+            url="https://example.invalid/test.onnx",
+            minimum_bytes=1,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / spec.filename
+            with mock.patch(
+                "features.model_download.persistent_model_dir",
+                return_value=Path(temp_dir),
+            ), mock.patch(
+                "features.model_download.urllib.request.urlopen",
+                return_value=IncompleteResponse(),
+            ), mock.patch(
+                "features.model_download.should_try_windows_fallback",
+                return_value=True,
+            ), mock.patch(
+                "features.model_download.download_with_bits",
+                return_value=destination,
+            ) as fallback:
+                result = download_model(spec)
+
+            self.assertEqual(result, destination)
+            fallback.assert_called_once()
             self.assertFalse(Path(temp_dir, "test.onnx.part").exists())
 
     def test_lama_inpaint_preserves_alpha_and_unmasked_pixels(self):

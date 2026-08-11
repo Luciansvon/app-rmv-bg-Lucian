@@ -458,12 +458,130 @@ inferensi dan menguji perpindahan progress bar kembali ke determinate.
 - `tests/test_features.py`
 - `docs/ARCHITECTURE.md`
 
+## ERR-012 - Model 0%, ZIP lolos checker tetapi tidak dibaca aplikasi
+
+Tanggal: 2026-08-11
+Versi: 2.6.3
+Area: Remove Background | Model Download | Windows Office
+Status: Diperbaiki dan dirilis pada v2.6.3
+
+### Gejala
+
+- Download model dari aplikasi pada PC kantor berhenti di 0% dan tidak
+  menampilkan byte unduhan.
+- Model yang dipindahkan lewat ZIP serta dijalankan melalui installer/checker
+  tetap tidak dibaca; aplikasi mencoba download lagi.
+- Browser PC kantor dapat mengunduh file, tetapi jalur Python/Requests tidak
+  menerima data.
+
+### Root cause
+
+- Requests/Pooch tidak otomatis mengikuti certificate store dan seluruh
+  konfigurasi proxy/PAC Windows yang dipakai browser pada jaringan dengan TLS
+  inspection.
+- Checker offline lama selalu memeriksa `%USERPROFILE%\.u2net`, sedangkan
+  `rembg` menghitung folder model dari `U2NET_HOME` atau `XDG_DATA_HOME` bila
+  variable itu tersedia. Checker dan engine dapat melihat dua folder berbeda.
+- Deteksi model lama menerima pencarian nama longgar serta batas 1 MB, sehingga
+  belum menjamin file target mode aktif benar-benar lengkap dan cocok.
+
+### Solusi
+
+- Aktifkan certificate store Windows melalui Truststore tanpa mematikan
+  verifikasi SSL.
+- Coba Requests/Pooch sekali, lalu otomatis gunakan BITS/SystemDefault proxy
+  untuk error jaringan kantor yang dikenali.
+- Paksa `U2NET_HOME` WhiteFlood ke `%USERPROFILE%\.u2net` dan pertahankan
+  validasi checksum `rembg`.
+- Deteksi hanya menerima nama model mode aktif dengan ukuran minimum 900 MB.
+- Tambahkan instalasi ONNX dari file melalui UI dengan verifikasi MD5, copy
+  parsial unik, dan atomic replace. Nama file sumber tidak perlu diubah user.
+- Pin `rembg 2.0.78` agar URL, nama, ukuran, dan hash model tidak drift antar
+  build.
+
+### Perlindungan regresi
+
+- Test memverifikasi folder cache kanonis, nama model exact, fallback BITS,
+  copy manual atomic, hash salah tidak menimpa file lama, serta progress
+  download-verifikasi tidak mundur.
+- LaMa juga memakai URL commit OpenCV Zoo yang dipin dan SHA-256 LFS resmi.
+
+### Bukti verifikasi aktual sebelum build
+
+- Syntax check source dan test lulus.
+- 35 unittest lulus.
+- Truststore aktif pada runtime Windows.
+- BITS mengunduh fixture resmi 7.313 byte sampai 100%.
+- MD5 BiRefNet-Massive lokal cocok:
+  `33E726A2136A3D59EB0FDF613E31E3E9`.
+- Inferensi BiRefNet-Massive nyata menghasilkan PNG RGBA 96x96 dengan alpha
+  0..255 tanpa download ulang.
+
+### Batas verifikasi
+
+- Proxy dan kebijakan firewall PC kantor yang bermasalah tidak dapat
+  direproduksi dari laptop build. Jika admin memblokir GitHub untuk BITS dan
+  aplikasi lain, tombol instal model dari file tetap menjadi jalur aman.
+
+## ERR-013 - Progress Upscale dan batch dapat maju lalu mundur
+
+Tanggal: 2026-08-11
+Versi: 2.6.3
+Area: Progress UI | Upscale | Batch | Model | Watermark
+Status: Diperbaiki dan dirilis pada v2.6.3
+
+### Gejala
+
+- Upscale dapat tampil 13%, melonjak ke 90%, lalu turun lagi.
+- Progress batch dapat dimulai pada persentase file aktif lalu kembali 0% saat
+  callback internal fitur berikutnya masuk.
+- Download model dapat mencapai 100%, lalu verifikasi atau proses utama mulai
+  lagi dari persentase rendah.
+- Setelah model sudah terpasang, Remove Background Furniture Quality dapat
+  terlihat diam di 0% selama lebih dari satu menit walau RAM naik bertahap;
+  engine sebenarnya sedang load/inferensi CPU.
+
+### Root cause
+
+- Real-ESRGAN NCNN melaporkan counter terpisah per tile/stage; source mengambil
+  angka pertama tanpa menjaga nilai tertinggi.
+- Callback 0..100 milik satu file ditulis langsung ke bar 0..100 milik seluruh
+  batch.
+- Copy/download, verifikasi hash, dan proses utama sama-sama memakai rentang
+  0..100 yang sama walau merupakan fase berurutan.
+
+### Solusi
+
+- Ambil persentase NCNN terakhir per baris, clamp 0..100, dan terapkan progress
+  monotonik.
+- Petakan setiap file ke segmen progress batch; fase indeterminate menahan
+  progress global terakhir.
+- Beri rentang terpisah untuk copy/download dan verifikasi serta untuk download
+  model sebagai subfase workflow utama.
+- Set fase indeterminate langsung dari Tk main thread sebelum worker AI mulai,
+  sehingga tahap tanpa callback kontinu tampil sebagai `...`, bukan 0% palsu.
+- Batch sukses atau selesai dengan error tetap 100%; pembatalan menampilkan
+  proporsi file yang benar-benar selesai.
+
+### Bukti verifikasi aktual sebelum build
+
+- Regression test urutan NCNN `13, 90, 42, 100` menghasilkan UI
+  `13, 90, 90, 100`.
+- Test dua file menghasilkan progress global `50, 50, 62.5, 100`.
+- Runtime Upscale 2x PNG transparan menghasilkan RGBA 32x32, alpha 0..255,
+  dan progress monotonik sampai 100%.
+- Runtime VTracer, LaMa Image, dan LaMa Video dua frame berhasil; output dan
+  progress mencapai tahap akhir tanpa reset.
+- Screenshot runtime menunjukkan model sudah terbaca dan RAM naik bertahap
+  sampai sekitar 3 GB saat Furniture Quality berjalan. Perilaku tersebut
+  konsisten dengan load/inferensi aktif, bukan kegagalan download.
+
 ## ERR-011 - Unduhan model terlihat berhenti di 15%
 
 Tanggal: 2026-08-11
 Versi: 2.6.2
 Area: Remove Background | Model Download
-Status: Diperbaiki; release sedang dipublikasikan
+Status: Diperbaiki dan dirilis pada v2.6.2
 
 ### Gejala
 
@@ -493,6 +611,9 @@ Status: Diperbaiki; release sedang dipublikasikan
   lokasi `%USERPROFILE%\\.u2net`, dan detail teknis aktual.
 - README menyediakan perintah PowerShell read-only untuk memantau nama, ukuran,
   dan waktu perubahan file model setiap dua detik.
+- Untuk jaringan yang memang melarang GitHub, README mendokumentasikan instalasi
+  offline melalui media yang disetujui admin kantor, nama file tujuan empat
+  model, dan verifikasi MD5 dari `rembg 2.0.78`.
 
 ### Perlindungan regresi
 
@@ -516,9 +637,11 @@ Status: Diperbaiki; release sedang dipublikasikan
 - Smoke start EXE selama 15 detik berhasil; proses tetap hidup dan ditutup setelah
   pemeriksaan. Rendering GUI dan unduhan penuh model belum diuji.
 
-### Gate yang belum selesai pada saat catatan ini dibuat
+### Batas verifikasi
 
-- Unduhan penuh BiRefNet pada PC kantor dan upload GitHub Release v2.6.2.
+- Unduhan penuh BiRefNet pada jaringan PC kantor belum diuji dari environment
+  ini. Release v2.6.2 sudah publik; asset GitHub berstatus `uploaded`, ukuran dan
+  SHA-256 cocok dengan artifact lokal.
 
 ### File terdampak
 

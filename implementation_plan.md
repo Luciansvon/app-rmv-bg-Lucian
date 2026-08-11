@@ -376,8 +376,8 @@ source aktif, regression test, dokumentasi, build, push, dan release v2.6.1.
 
 ## 2026-08-11 - Fix unduhan model mentok 15% dan release v2.6.2
 
-Status: Implementasi, test, smoke download, build, dan smoke start EXE lulus;
-commit/push/release sedang berjalan.
+Status: Selesai. Implementasi, test, smoke download, build, smoke start EXE,
+commit, push, dan release publik v2.6.2 lulus.
 
 ### Fakta dan root cause yang sudah terbukti
 
@@ -431,3 +431,119 @@ commit/push/release sedang berjalan.
   buat GitHub Release `v2.6.2`, upload EXE, lalu cocokkan ukuran dan SHA-256
   asset GitHub dengan artifact lokal.
 - Release tidak akan di-merge ke branch lain kecuali diminta.
+
+## 2026-08-11 - Download model otomatis untuk jaringan kantor strict
+
+Status: Selesai; seluruh gate lokal, push, dan release publik v2.6.3 lulus.
+Mode: AUDIT lalu REDESIGN
+Domain: UI_UX dengan batas teknis download Windows
+Specificity: PROBLEM
+Metode: Audit lalu First Principles
+
+### Fakta yang sudah terbukti
+
+- Pada PC kantor, release v2.6.2 tetap berada di `0%`; berarti downloader belum
+  melaporkan satu byte model yang diterima aplikasi.
+- File yang sama dapat diunduh manual melalui browser pada PC tersebut.
+- Downloader Remove Background saat ini memakai Pooch `1.9.0`, yang memakai
+  Requests untuk HTTPS.
+- Microsoft mendokumentasikan bahwa aplikasi Python dapat gagal pada jaringan
+  dengan TLS inspection karena tidak memakai certificate store Windows secara
+  default.
+- Truststore menyediakan certificate store native Windows melalui CryptoAPI.
+- BITS memakai proxy Windows/SystemDefault, mendukung proxy authentication,
+  progress, serta transfer background pada sesi user Windows yang sedang login.
+- Model manual sebelumnya tidak terbaca bila nama dan lokasi akhirnya tidak
+  persis seperti yang dicari rembg di `%USERPROFILE%\\.u2net`.
+
+### Inferensi yang perlu dibuktikan di PC kantor
+
+- Penyebab paling mungkin adalah sertifikat TLS inspection atau konfigurasi
+  proxy Windows/PAC yang dipercaya browser tetapi tidak dipakai Requests dalam
+  EXE. Keyakinan: sedang-tinggi, karena browser berhasil sementara aplikasi
+  belum menerima byte.
+- Kebijakan kantor masih dapat memblokir GitHub untuk semua program selain
+  browser. Karena itu tidak ada patch yang bisa menjamin auto-download tanpa
+  fallback bila server memang diblokir oleh admin.
+
+### Problem statement
+
+Untuk user WhiteFlood pada PC kantor, pemasangan model harus selesai dari dalam
+aplikasi dengan mengikuti konfigurasi keamanan Windows, menampilkan status yang
+jujur, dan tidak meminta user memakai CMD, memindahkan folder, atau mengganti
+nama file secara manual.
+
+### Scope yang diusulkan
+
+1. Aktifkan Truststore sedini mungkin pada startup EXE agar Pooch/Requests
+   memverifikasi HTTPS memakai certificate store Windows, tanpa mematikan
+   verifikasi SSL.
+2. Pertahankan downloader Pooch sebagai jalur utama. Jika gagal sebelum model
+   tersedia, ambil URL, nama file, dan hash langsung dari pemanggilan rembg lalu
+   pindah otomatis ke BITS dengan proxy `SystemDefault`.
+3. BITS mengirim byte terunduh/total ke progress UI, menulis ke file `.part`,
+   memverifikasi hash resmi rembg, lalu melakukan atomic replace ke nama model
+   persis di `%USERPROFILE%\\.u2net`.
+4. Tambahkan satu aksi cadangan `Pasang Model dari File` di halaman Remove
+   Background. File yang dipilih diverifikasi di worker, lalu disalin dan
+   dinamai otomatis; user tidak perlu membuka terminal atau folder cache.
+5. Error akhir membedakan kegagalan HTTPS Python, BITS/policy Windows, hash
+   salah, dan server diblokir. Jangan menyarankan `verify=False` atau mematikan
+   firewall.
+6. Perbarui dependency/build, README, `docs/ERROR_SOLUTIONS.md`, dan
+   `docs/WORKLOG.md`; naikkan versi patch menjadi v2.6.3 setelah seluruh gate
+   release lulus.
+
+### Yang tidak dikerjakan
+
+- Tidak membundel model 927.61 MiB ke dalam PyInstaller `--onefile`, karena
+  model akan memperbesar EXE dan berisiko diekstrak ulang setiap aplikasi dibuka.
+- Tidak meng-upload foto atau model ke cloud selain URL model resmi yang sudah
+  dipakai rembg.
+- Tidak menonaktifkan SSL, firewall, antivirus, proxy, atau kebijakan kantor.
+- Tidak mengunduh model BiRefNet penuh saat pengujian lokal tanpa persetujuan.
+
+### Acceptance criteria
+
+- Jalur normal memakai sertifikat Windows dan tetap memverifikasi HTTPS.
+- Jika Requests gagal, UI otomatis berpindah ke `Mencoba jalur Windows kantor`
+  tanpa kembali diam di `0%`.
+- Progress BITS memakai byte nyata; status indeterminate dipakai bila total
+  belum diketahui.
+- Hanya file dengan hash yang sesuai yang dapat menjadi
+  `birefnet-*.onnx`; file rusak tidak menimpa model valid.
+- File manual dengan nama apa pun dapat dipilih, diverifikasi, dan dipasang ke
+  nama/lokasi yang benar tanpa CMD atau PowerShell.
+- Model yang selesai dipasang langsung dipakai pada proses yang sama; user tidak
+  perlu memindahkan file atau restart aplikasi.
+- Syntax check, seluruh unittest, fallback test dengan fixture kecil, hash dan
+  atomic-install regression, diff check, build EXE, smoke-start EXE, ukuran,
+  timestamp, dan SHA-256 artifact lulus.
+- Download model penuh dan pembuktian proxy tetap diberi label pending sampai
+  release diuji pada PC kantor yang mengalami masalah.
+
+### Release
+
+- Setelah plan disetujui: implementasi patch kecil, test, build v2.6.3, commit,
+  push branch aktif, buat release GitHub, upload EXE, lalu cocokkan ukuran dan
+  SHA-256 asset GitHub dengan artifact lokal.
+
+### Hasil implementasi aktual
+
+- Truststore Windows, fallback BITS/SystemDefault proxy, cache model kanonis,
+  instalasi model dari file, verifikasi hash, dan atomic replace diterapkan.
+- Progress Remove Background, model, Watermark, Upscale, dan batch dipetakan
+  per fase serta dijaga agar tidak mundur.
+- Audit tambahan menemukan dan memperbaiki TclError saat berpindah dari White
+  Background kembali ke mode AI.
+- 35 unittest, syntax check, `git diff --check`, BITS fixture, GUI construction,
+  BiRefNet-Massive nyata, Real-ESRGAN nyata, VTracer nyata, LaMa Image, dan
+  LaMa Video lulus.
+- Build staging PyInstaller UI-final lulus: 294.769.390 byte, SHA-256
+  `A556A60F5A819224C0247CE92396F4F9135B853696FBCA95BCBE5174FACE3E6D`.
+- Smoke start EXE 15 detik lulus. Jaringan/proxy PC kantor tetap menjadi gate
+  eksternal karena tidak tersedia pada laptop build.
+- Release publik: `https://github.com/Luciansvon/app-rmv-bg-Lucian/releases/tag/v2.6.3`.
+  Asset GitHub berukuran 294.769.390 byte dengan digest
+  `sha256:a556a60f5a819224c0247ce92396f4f9135b853696fbca95bcbe5174face3e6d`,
+  cocok dengan artifact lokal.

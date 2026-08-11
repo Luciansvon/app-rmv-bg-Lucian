@@ -1,7 +1,9 @@
 Pillow>=10.0
 numpy>=1.24
 customtkinter>=5.2
-rembg[cpu]>=2.0
+rembg[cpu]==2.0.78
+pooch==1.9.0
+truststore==0.10.4
 psutil>=5.9
 pymatting>=1.1.15
 onnxruntime>=1.17
