@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0D1014"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="18dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="18dp">
+
+            <ImageView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="13dp"
+                android:contentDescription="WhiteFlood"
+                android:scaleType="centerInside"
+                android:src="@drawable/wf_logo" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="Setelan"
+                    android:textColor="#F3F1ED"
+                    android:textSize="24sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="WhiteFlood Android Pilot"
+                    android:textColor="#61BD9B"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.08"
+            android:text="PERFORMA"
+            android:textColor="#8F9AA3"
+            android:textSize="11sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/wf_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="Tetap nyala saat proses"
+                android:textColor="#F3F1ED"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Cegah layar tidur ketika upscale sedang berjalan."
+                android:textColor="#8F9AA3"
+                android:textSize="12sp" />
+
+            <ToggleButton
+                android:id="@+id/toggle_keep_screen"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/wf_toggle"
+                android:textAllCaps="false"
+                android:textColor="#F3F1ED"
+                android:textOff="Nonaktif"
+                android:textOn="Aktif" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="16dp"
+                android:background="#27303A" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="CPU fallback"
+                android:textColor="#F3F1ED"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Gunakan hanya bila jalur GPU/Vulkan bermasalah."
+                android:textColor="#8F9AA3"
+                android:textSize="12sp" />
+
+            <ToggleButton
+                android:id="@+id/toggle_cpu"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/wf_toggle"
+                android:textAllCaps="false"
+                android:textColor="#F3F1ED"
+                android:textOff="GPU / Vulkan"
+                android:textOn="CPU fallback" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Tile size"
+                android:textColor="#D7DBDE"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/editTile"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/wf_field"
+                android:hint="0 = otomatis"
+                android:inputType="number"
+                android:paddingHorizontal="14dp"
+                android:textColor="#F3F1ED"
+                android:textColorHint="#66717A" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="8dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.08"
+            android:text="OUTPUT"
+            android:textColor="#8F9AA3"
+            android:textSize="11sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/wf_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="Simpan otomatis"
+                android:textColor="#F3F1ED"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Jika nonaktif, hasil disimpan lewat tombol Simpan Hasil."
+                android:textColor="#8F9AA3"
+                android:textSize="12sp" />
+
+            <ToggleButton
+                android:id="@+id/toggle_auto_save"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/wf_toggle"
+                android:textAllCaps="false"
+                android:textColor="#F3F1ED"
+                android:textOff="Manual"
+                android:textOn="Otomatis" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Folder hasil"
+                android:textColor="#D7DBDE"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/editSavePath"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="7dp"
+                android:background="@drawable/wf_field"
+                android:hint="Default: DCIM/RealSR"
+                android:paddingHorizontal="14dp"
+                android:singleLine="true"
+                android:textColor="#F3F1ED"
+                android:textColorHint="#66717A" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="8dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.08"
+            android:text="ENGINE"
+            android:textColor="#8F9AA3"
+            android:textSize="11sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/wf_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="Real-ESRGAN • NCNN"
+                android:textColor="#F3F1ED"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="2× Photo dan 4× Photo • pemrosesan lokal"
+                android:textColor="#61BD9B"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Pilot v0.1.1 • source engine dipin ke RealSR Android 1.13.2"
+                android:textColor="#8F9AA3"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/wf_button_primary"
+            android:text="Simpan Setelan"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone">
+
+            <ToggleButton android:id="@+id/toggle_mult_files" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <ToggleButton android:id="@+id/toggle_pre_png" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <ToggleButton android:id="@+id/toggle_pre_frames" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <ToggleButton android:id="@+id/toggle_serarch_view" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <ToggleButton android:id="@+id/toggle_final_command" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <ToggleButton android:id="@+id/toggle_custom_label" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+
+            <Spinner android:id="@+id/spinner" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <Spinner android:id="@+id/spinner_format" android:layout_width="wrap_content" android:layout_height="wrap_content" android:entries="@array/format" />
+            <Spinner android:id="@+id/spinner_dir_format" android:layout_width="wrap_content" android:layout_height="wrap_content" android:entries="@array/dir_output_format" />
+            <Spinner android:id="@+id/spinner_name" android:layout_width="wrap_content" android:layout_height="wrap_content" android:entries="@array/name" />
+            <Spinner android:id="@+id/spinner_name2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:entries="@array/name2" />
+            <Spinner android:id="@+id/spinner_name3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:entries="@array/name3" />
+            <Spinner android:id="@+id/spinner_orientation" android:layout_width="wrap_content" android:layout_height="wrap_content" android:entries="@array/oriental_item" />
+            <Spinner android:id="@+id/spinner_notify" android:layout_width="wrap_content" android:layout_height="wrap_content" android:entries="@array/notify_item" />
+
+            <EditText android:id="@+id/editDefaultCommand" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <EditText android:id="@+id/editMagickFilters" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <EditText android:id="@+id/editClassicalFilters" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <EditText android:id="@+id/editThread" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <EditText android:id="@+id/editExtraCommand" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <EditText android:id="@+id/editExtraPath" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <EditText android:id="@+id/editMNNBackend" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+
+            <CheckBox android:id="@+id/check_hide_realsr" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <CheckBox android:id="@+id/check_hide_srmd" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <CheckBox android:id="@+id/check_hide_waifu2x" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <CheckBox android:id="@+id/check_hide_realcugan" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <CheckBox android:id="@+id/check_hide_mnnsr" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <CheckBox android:id="@+id/check_hide_resize" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <CheckBox android:id="@+id/check_hide_magick" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <CheckBox android:id="@+id/check_hide_anime4k" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+
+            <Button android:id="@+id/btn_edit_labels" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <Button android:id="@+id/btn_reset" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            <Button android:id="@+id/btn_reset_low" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Built by Bima Chakti"
+                android:textColor="#66717A"
+                android:textSize="10sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="© 2026 Bima Chakti"
+                android:textColor="#66717A"
+                android:textSize="10sp" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

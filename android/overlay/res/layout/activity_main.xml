@@ -13,6 +13,15 @@
         android:orientation="horizontal"
         android:paddingBottom="14dp">
 
+        <ImageView
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginEnd="12dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="WhiteFlood"
+            android:scaleType="centerInside"
+            android:src="@drawable/wf_logo" />
+
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -41,7 +50,7 @@
             android:id="@+id/btn_setting"
             android:layout_width="wrap_content"
             android:layout_height="44dp"
-            android:backgroundTint="#27323D"
+            android:background="@drawable/wf_button_secondary"
             android:minWidth="0dp"
             android:paddingHorizontal="14dp"
             android:text="Setelan"
@@ -53,7 +62,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#151A20"
+        android:background="@drawable/wf_card"
         android:padding="6dp">
 
         <com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
@@ -80,7 +89,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:maxLines="2"
+        android:maxLines="3"
         android:text="Pilih foto untuk mulai. Pemrosesan tetap lokal di perangkat."
         android:textColor="#8F9AA3"
         android:textSize="12sp" />
@@ -95,7 +104,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:background="#151A20"
+        android:background="@drawable/wf_card"
         android:orientation="vertical"
         android:padding="14dp">
 
@@ -120,7 +129,7 @@
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="10dp"
-            android:backgroundTint="#EF5B73"
+            android:background="@drawable/wf_field"
             android:popupBackground="#151A20" />
 
         <LinearLayout
@@ -135,7 +144,7 @@
                 android:layout_height="50dp"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
-                android:backgroundTint="#27323D"
+                android:background="@drawable/wf_button_secondary"
                 android:text="Pilih Foto"
                 android:textAllCaps="false"
                 android:textColor="#F3F1ED" />
@@ -146,7 +155,7 @@
                 android:layout_height="50dp"
                 android:layout_marginStart="6dp"
                 android:layout_weight="1"
-                android:backgroundTint="#EF5B73"
+                android:background="@drawable/wf_button_primary"
                 android:text="Upscale"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF" />
@@ -157,18 +166,32 @@
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="8dp"
-            android:backgroundTint="#354451"
+            android:background="@drawable/wf_button_secondary"
             android:text="Simpan Hasil"
             android:textAllCaps="false"
             android:textColor="#F3F1ED" />
     </LinearLayout>
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:paddingTop="10dp"
-        android:text="Built by Bima Chakti  •  © 2026 Bima Chakti"
-        android:textColor="#66717A"
-        android:textSize="10sp" />
+        android:orientation="vertical"
+        android:paddingTop="9dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Built by Bima Chakti"
+            android:textColor="#66717A"
+            android:textSize="10sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:text="© 2026 Bima Chakti"
+            android:textColor="#66717A"
+            android:textSize="10sp" />
+    </LinearLayout>
 </LinearLayout>

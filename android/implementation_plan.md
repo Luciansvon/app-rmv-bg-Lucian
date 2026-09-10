@@ -84,7 +84,7 @@ Pilot dianggap build-complete hanya jika GitHub Actions menghasilkan APK dan dig
 
 # v0.1.1 — Runtime/UI Fix Plan
 
-Status: **Menunggu persetujuan eksplisit Bima sebelum coding.**
+Status: **Disetujui Bima pada 2026-09-10. Implementasi berjalan.**
 
 Bukti dari pengujian HP pada 2026-09-10 menunjukkan home utama sudah sesuai arah visual, tetapi ada dua masalah runtime dan satu area UI yang perlu diperbaiki.
 
@@ -114,7 +114,12 @@ Bukti dari pengujian HP pada 2026-09-10 menunjukkan home utama sudah sesuai arah
    - gunakan sebagai launcher/app icon dan elemen branding UI yang relevan tanpa memenuhi area preview;
    - bila launcher membutuhkan adaptive icon foreground/background, buat wrapper resource Android dari logo yang sama, bukan menggambar identitas baru.
 
-5. **Pertahankan batas pilot**
+5. **Sinkronkan source dan runtime asset upstream**
+   - source Android tetap dipin ke upstream release 1.13.2;
+   - runtime binary/model tidak boleh lagi diambil dari bundle release 1.11.1;
+   - build harus memakai asset yang diekstrak dari APK resmi upstream 1.13.2 dan memverifikasi SHA-256 sebelum dipakai.
+
+6. **Pertahankan batas pilot**
    - masih hanya Upscale 2x/4x;
    - local processing;
    - tidak mengubah source desktop;
@@ -126,6 +131,7 @@ CI:
 - overlay script lulus;
 - Gradle `assembleDebug` lulus;
 - APK + SHA-256 + evidence dibuat;
+- runtime assets berasal dari APK resmi upstream 1.13.2 yang digest-nya diverifikasi;
 - launcher resource mengacu ke aset WhiteFlood, bukan ikon upstream.
 
 Runtime HP:

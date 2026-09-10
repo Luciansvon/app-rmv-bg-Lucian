@@ -19,8 +19,8 @@ concurrency:
 env:
   UPSTREAM_REPO: https://github.com/tumuyan/RealSR-NCNN-Android.git
   UPSTREAM_SHA: 0eb16763761e46f55c6223439ca1ad20216bc4ab
-  ASSETS_URL: https://github.com/tumuyan/RealSR-NCNN-Android/releases/download/1.11.1/assets.zip
-  NCNN_URL: https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-android-vulkan-shared.zip
+  UPSTREAM_APK_URL: https://github.com/tumuyan/RealSR-NCNN-Android/releases/download/1.13.2/RealSR-NCNN-Android-GUI-armv8a-1.13.2.apk
+  UPSTREAM_APK_SHA256: d7b68c2589ad1cb9a953ed8ca001f6600217dceb4ee7053bc21e8c3899c4c6e7
 
 jobs:
   build-apk:
@@ -50,16 +50,24 @@ jobs:
           git -C upstream checkout --detach FETCH_HEAD
           test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
 
-      - name: Fetch pinned engine assets
+      - name: Fetch matching upstream 1.13.2 runtime assets
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --location --retry 3 "$ASSETS_URL" --output assets.zip
-          curl --fail --location --retry 3 "$NCNN_URL" --output ncnn-android-vulkan-shared.zip
-          sha256sum assets.zip ncnn-android-vulkan-shared.zip | tee dependency-sha256.txt
-          mkdir -p upstream/3rdparty
-          unzip -q -o assets.zip -d upstream/RealSR-NCNN-Android-GUI/app/src/main/assets
-          unzip -q -o ncnn-android-vulkan-shared.zip -d upstream/3rdparty/ncnn-android-vulkan-shared
+          curl --fail --location --retry 3 "$UPSTREAM_APK_URL" --output upstream-engine.apk
+          printf '%s  %s\n' "$UPSTREAM_APK_SHA256" "upstream-engine.apk" | sha256sum -c -
+          sha256sum upstream-engine.apk | tee dependency-sha256.txt
+
+          if ! unzip -Z1 upstream-engine.apk | grep -q '^assets/realsr/'; then
+            echo "Official upstream APK does not contain assets/realsr/" >&2
+            exit 1
+          fi
+
+          unzip -q -o upstream-engine.apk 'assets/*' \
+            -d upstream/RealSR-NCNN-Android-GUI/app/src/main
+
+          test -d upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr
+          test -f upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr/realsr-ncnn
 
       - name: Apply WhiteFlood Android overlay
         shell: bash
@@ -68,6 +76,13 @@ jobs:
           python3 android/apply_whiteflood_overlay.py \
             --upstream-root upstream \
             --overlay-root android/overlay
+
+          test -f upstream/RealSR-NCNN-Android-GUI/app/src/main/res/drawable-nodpi/wf_logo.png
+          cmp \
+            review-temp/WhiteFlood_BG_Remover_App/logo.png \
+            upstream/RealSR-NCNN-Android-GUI/app/src/main/res/drawable-nodpi/wf_logo.png
+          grep -q 'android:icon="@drawable/wf_logo"' \
+            upstream/RealSR-NCNN-Android-GUI/app/src/main/AndroidManifest.xml
 
       - name: Build debug APK
         shell: bash
@@ -89,26 +104,26 @@ jobs:
           fi
 
           mkdir -p artifacts
-          APK_OUT="artifacts/WhiteFlood-Android-Pilot-v0.1.0.apk"
+          APK_OUT="artifacts/WhiteFlood-Android-Pilot-v0.1.1.apk"
           cp "${APK_FILES[0]}" "$APK_OUT"
-          sha256sum "$APK_OUT" | tee artifacts/WhiteFlood-Android-Pilot-v0.1.0.sha256
+          sha256sum "$APK_OUT" | tee artifacts/WhiteFlood-Android-Pilot-v0.1.1.sha256
 
           APK_SHA=$(sha256sum "$APK_OUT" | awk '{print $1}')
           APK_SIZE=$(stat -c '%s' "$APK_OUT")
-          DEP_ASSETS_SHA=$(awk '$2 == "assets.zip" {print $1}' dependency-sha256.txt)
-          DEP_NCNN_SHA=$(awk '$2 == "ncnn-android-vulkan-shared.zip" {print $1}' dependency-sha256.txt)
+          ENGINE_APK_SHA=$(awk '$2 == "upstream-engine.apk" {print $1}' dependency-sha256.txt)
+          LOGO_SHA=$(sha256sum review-temp/WhiteFlood_BG_Remover_App/logo.png | awk '{print $1}')
 
-          python3 - "$APK_SHA" "$APK_SIZE" "$DEP_ASSETS_SHA" "$DEP_NCNN_SHA" <<'PY'
+          python3 - "$APK_SHA" "$APK_SIZE" "$ENGINE_APK_SHA" "$LOGO_SHA" <<'PY'
           import json
           import os
           import sys
           from pathlib import Path
 
-          apk_sha, apk_size, assets_sha, ncnn_sha = sys.argv[1:]
+          apk_sha, apk_size, engine_apk_sha, logo_sha = sys.argv[1:]
           evidence = {
               "schema_version": 1,
               "project": "WhiteFlood",
-              "artifact": "WhiteFlood-Android-Pilot-v0.1.0.apk",
+              "artifact": "WhiteFlood-Android-Pilot-v0.1.1.apk",
               "artifact_sha256": apk_sha,
               "artifact_size_bytes": int(apk_size),
               "source_revision": os.environ["GITHUB_SHA"],
@@ -118,23 +133,32 @@ jobs:
               "upstream": {
                   "repository": "tumuyan/RealSR-NCNN-Android",
                   "commit": os.environ["UPSTREAM_SHA"],
-                  "release_assets": "1.11.1/assets.zip",
-                  "assets_sha256": assets_sha,
+                  "runtime_asset_source": "official 1.13.2 APK",
+                  "runtime_asset_sha256": engine_apk_sha,
               },
-              "ncnn": {
-                  "release": "20250503",
-                  "package": "ncnn-20250503-android-vulkan-shared.zip",
-                  "sha256": ncnn_sha,
+              "branding": {
+                  "source": "review-temp/WhiteFlood_BG_Remover_App/logo.png",
+                  "sha256": logo_sha,
+                  "launcher_resource": "@drawable/wf_logo",
               },
-              "scope": ["android-arm64-pilot", "local-upscale", "2x", "4x"],
+              "scope": [
+                  "android-arm64-pilot",
+                  "local-upscale",
+                  "2x",
+                  "4x",
+                  "preview-fix",
+                  "settings-redesign",
+              ],
               "runtime_device_verified": False,
           }
           out = Path("artifacts/evidence.json")
           out.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
           Path("artifacts/evidence.md").write_text(
-              "# WhiteFlood Android Pilot Build Evidence\n\n"
+              "# WhiteFlood Android Pilot v0.1.1 Build Evidence\n\n"
               f"- Revision: `{evidence['source_revision']}`\n"
               f"- Upstream: `{evidence['upstream']['commit']}`\n"
+              f"- Runtime assets: official upstream 1.13.2 APK `{engine_apk_sha}`\n"
+              f"- WhiteFlood logo: `{logo_sha}`\n"
               f"- APK SHA-256: `{apk_sha}`\n"
               f"- APK bytes: `{apk_size}`\n"
               "- CI build: PASS\n"
@@ -148,7 +172,7 @@ jobs:
       - name: Upload APK evidence bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: WhiteFlood-Android-Pilot-v0.1.0
+          name: WhiteFlood-Android-Pilot-v0.1.1
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
