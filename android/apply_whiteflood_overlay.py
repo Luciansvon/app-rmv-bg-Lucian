@@ -70,10 +70,15 @@ def patch_main_activity(path: Path) -> None:
         spinner.setAdapter(adapter);'''
     text = replace_once(text, old_commands, new_commands, "WhiteFlood preset block")
 
+    old_initial_preview = '''        titleFile = new File(dir, "img/realsr.png");
+        showImage(titleFile, getString(R.string.default_log));'''
+    new_initial_preview = '''        titleFile = new File(dir, "img/realsr.png");
+        imageView.setVisibility(View.GONE);
+        logTextView.setText("Pilih foto untuk mulai. Pemrosesan tetap lokal di perangkat.");'''
     text = replace_once(
         text,
-        '        showImage(titleFile, getString(R.string.default_log));',
-        '        imageView.setVisibility(View.GONE);\n        logTextView.setText("Pilih foto untuk mulai. Pemrosesan tetap lokal di perangkat.");',
+        old_initial_preview,
+        new_initial_preview,
         "initial preview",
     )
     path.write_text(text, encoding="utf-8")
