@@ -79,3 +79,61 @@ Runtime yang belum boleh diklaim dari CI generik:
 ## Definition of done pilot
 
 Pilot dianggap build-complete hanya jika GitHub Actions menghasilkan APK dan digest yang dapat diperiksa. Pilot dianggap runtime-complete hanya setelah APK dipasang pada perangkat Android nyata dan satu fixture foto 2x + 4x berhasil diproses dan disimpan.
+
+---
+
+# v0.1.1 — Runtime/UI Fix Plan
+
+Status: **Menunggu persetujuan eksplisit Bima sebelum coding.**
+
+Bukti dari pengujian HP pada 2026-09-10 menunjukkan home utama sudah sesuai arah visual, tetapi ada dua masalah runtime dan satu area UI yang perlu diperbaiki.
+
+## Requirement v0.1.1
+
+1. **Perbaiki preview gambar**
+   - gambar yang dipilih harus langsung tampil di area preview;
+   - jangan menyembunyikan viewer setelah user memilih gambar;
+   - pertahankan viewer upstream agar gambar besar tetap aman.
+
+2. **Perbaiki input gambar ke engine**
+   - jangan mengandalkan path/URI yang tidak bisa dibaca native engine;
+   - bila Android picker memberi `content://`, materialisasikan/copy ke file cache lokal sebelum menjalankan NCNN;
+   - nama file cache aman dan input asli tidak diubah;
+   - error harus menjelaskan bila file tidak dapat dibuka/dibaca.
+
+3. **Redesign Setelan dan layar sekunder**
+   - home utama dipertahankan;
+   - Setelan dibuat lebih modern dan konsisten dengan dark UI WhiteFlood;
+   - gunakan grouping/card/section yang rapi, spacing lebih baik, dan hindari kontrol bawaan Android yang terlihat jadul bila bisa dioverlay tanpa rewrite besar;
+   - jangan memindahkan opsi teknis yang tidak perlu ke home.
+
+4. **Gunakan ikon WhiteFlood yang sudah ada**
+   - source of truth ikon/logo adalah file yang dipakai README: `review-temp/WhiteFlood_BG_Remover_App/logo.png`;
+   - jangan membuat logo baru jika file tersebut tersedia;
+   - build overlay harus menyalin logo itu ke resource Android yang sesuai;
+   - gunakan sebagai launcher/app icon dan elemen branding UI yang relevan tanpa memenuhi area preview;
+   - bila launcher membutuhkan adaptive icon foreground/background, buat wrapper resource Android dari logo yang sama, bukan menggambar identitas baru.
+
+5. **Pertahankan batas pilot**
+   - masih hanya Upscale 2x/4x;
+   - local processing;
+   - tidak mengubah source desktop;
+   - tidak menambah fitur berat baru.
+
+## Verification v0.1.1
+
+CI:
+- overlay script lulus;
+- Gradle `assembleDebug` lulus;
+- APK + SHA-256 + evidence dibuat;
+- launcher resource mengacu ke aset WhiteFlood, bukan ikon upstream.
+
+Runtime HP:
+- pilih JPG/PNG dari picker -> preview tampil;
+- tekan Upscale -> engine menerima file lokal yang valid;
+- output 2x berhasil dibuat dan bisa dipreview;
+- output 4x dicoba terpisah;
+- Setelan dapat dibuka dan ditutup tanpa crash;
+- ikon WhiteFlood tampil pada launcher/app surface yang tersedia.
+
+Bugfix yang benar-benar dikerjakan nanti wajib dicatat ke `docs/ERROR_SOLUTIONS.md` dan `docs/WORKLOG.md` sesuai aturan repo.
