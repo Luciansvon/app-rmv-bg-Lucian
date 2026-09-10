@@ -1,0 +1,26 @@
+name: B.I.M.A Shared Infra Audit
+
+on:
+  push:
+    branches:
+      - feat/android-upscale-mvp
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whiteflood-bima-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    uses: Luciansvon/B.I.M.A-DEV-INFRA/.github/workflows/repository-audit.yml@dc7a96cf885f41bd665270c4a77ef0e7c12d313b
+    with:
+      infra-ref: dc7a96cf885f41bd665270c4a77ef0e7c12d313b
+      policy-path: bima-audit-policy.json
+      artifact-name: whiteflood-repository-audit
