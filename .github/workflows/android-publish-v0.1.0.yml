@@ -34,7 +34,9 @@ jobs:
           test -f release-artifact/WhiteFlood-Android-Pilot-v0.1.0.apk
           test -f release-artifact/WhiteFlood-Android-Pilot-v0.1.0.sha256
           test -f release-artifact/evidence.md
-          sha256sum -c release-artifact/WhiteFlood-Android-Pilot-v0.1.0.sha256
+          cd release-artifact
+          sed 's#  artifacts/#  #' WhiteFlood-Android-Pilot-v0.1.0.sha256 | sha256sum -c -
+          cd ..
 
       - name: Prepare release notes
         shell: bash
