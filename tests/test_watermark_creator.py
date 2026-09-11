@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,9 +7,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from review_temp_import_helper import ensure_app_on_path
-
-ensure_app_on_path()
+APP_DIR = Path(__file__).resolve().parents[1] / "review-temp" / "WhiteFlood_BG_Remover_App"
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 
 from features.watermark_creator import (
     CreatorPreset,
