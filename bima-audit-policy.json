@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "required_files": [
+    "README.md",
+    "AGENTS.md",
+    "user.md",
+    "implementation_plan.md",
+    "android/implementation_plan.md"
+  ],
+  "max_file_bytes": 10485760
+}

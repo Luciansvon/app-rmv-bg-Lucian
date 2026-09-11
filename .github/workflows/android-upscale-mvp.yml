@@ -1,0 +1,190 @@
+name: WhiteFlood Android Pilot APK
+
+on:
+  push:
+    branches:
+      - feat/android-upscale-mvp
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-upscale-mvp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whiteflood-android-pilot-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UPSTREAM_REPO: https://github.com/tumuyan/RealSR-NCNN-Android.git
+  UPSTREAM_SHA: 0eb16763761e46f55c6223439ca1ad20216bc4ab
+  UPSTREAM_APK_URL: https://github.com/tumuyan/RealSR-NCNN-Android/releases/download/1.13.2/RealSR-NCNN-Android-GUI-armv8a-1.13.2.apk
+  UPSTREAM_APK_SHA256: d7b68c2589ad1cb9a953ed8ca001f6600217dceb4ee7053bc21e8c3899c4c6e7
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout WhiteFlood
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Fetch pinned Android engine source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init upstream
+          git -C upstream remote add origin "$UPSTREAM_REPO"
+          git -C upstream fetch --depth=1 origin "$UPSTREAM_SHA"
+          git -C upstream checkout --detach FETCH_HEAD
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+
+      - name: Fetch matching upstream 1.13.2 runtime assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 "$UPSTREAM_APK_URL" --output upstream-engine.apk
+          printf '%s  %s\n' "$UPSTREAM_APK_SHA256" "upstream-engine.apk" | sha256sum -c -
+          sha256sum upstream-engine.apk | tee dependency-sha256.txt
+
+          if ! unzip -Z1 upstream-engine.apk | grep -q '^assets/realsr/'; then
+            echo "Official upstream APK does not contain assets/realsr/" >&2
+            exit 1
+          fi
+
+          unzip -q -o upstream-engine.apk 'assets/*' \
+            -d upstream/RealSR-NCNN-Android-GUI/app/src/main
+
+          test -d upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr
+          test -f upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr/realsr-ncnn
+          test -d upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr/models-Real-ESRGAN-SourceBook
+          test -d upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr/models-Real-ESRGANv3-general
+
+      - name: Apply WhiteFlood Android overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile android/apply_whiteflood_overlay.py
+          python3 android/apply_whiteflood_overlay.py \
+            --upstream-root upstream \
+            --overlay-root android/overlay
+
+          test -f upstream/RealSR-NCNN-Android-GUI/app/src/main/res/drawable-nodpi/wf_logo.png
+          cmp \
+            review-temp/WhiteFlood_BG_Remover_App/logo.png \
+            upstream/RealSR-NCNN-Android-GUI/app/src/main/res/drawable-nodpi/wf_logo.png
+          grep -q 'android:icon="@drawable/wf_logo"' \
+            upstream/RealSR-NCNN-Android-GUI/app/src/main/AndroidManifest.xml
+          grep -q "versionName '0.1.2'" \
+            upstream/RealSR-NCNN-Android-GUI/app/build.gradle
+          grep -q 'test -s output.png' \
+            upstream/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java
+          grep -q 'proses berhenti dengan exit code' \
+            upstream/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/ImageProcessor.java
+
+      - name: Build debug APK
+        shell: bash
+        working-directory: upstream/RealSR-NCNN-Android-GUI
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Collect APK and evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t APK_FILES < <(find upstream/RealSR-NCNN-Android-GUI/app/build/outputs/apk/debug -type f -name '*.apk' | sort)
+          if [ "${#APK_FILES[@]}" -ne 1 ]; then
+            printf 'Expected exactly one APK, found %s\n' "${#APK_FILES[@]}" >&2
+            printf '%s\n' "${APK_FILES[@]}" >&2
+            exit 1
+          fi
+
+          mkdir -p artifacts
+          APK_OUT="artifacts/WhiteFlood-Android-Pilot-v0.1.2.apk"
+          cp "${APK_FILES[0]}" "$APK_OUT"
+          sha256sum "$APK_OUT" | tee artifacts/WhiteFlood-Android-Pilot-v0.1.2.sha256
+
+          APK_SHA=$(sha256sum "$APK_OUT" | awk '{print $1}')
+          APK_SIZE=$(stat -c '%s' "$APK_OUT")
+          ENGINE_APK_SHA=$(awk '$2 == "upstream-engine.apk" {print $1}' dependency-sha256.txt)
+          LOGO_SHA=$(sha256sum review-temp/WhiteFlood_BG_Remover_App/logo.png | awk '{print $1}')
+
+          python3 - "$APK_SHA" "$APK_SIZE" "$ENGINE_APK_SHA" "$LOGO_SHA" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          apk_sha, apk_size, engine_apk_sha, logo_sha = sys.argv[1:]
+          evidence = {
+              "schema_version": 1,
+              "project": "WhiteFlood",
+              "artifact": "WhiteFlood-Android-Pilot-v0.1.2.apk",
+              "artifact_sha256": apk_sha,
+              "artifact_size_bytes": int(apk_size),
+              "source_revision": os.environ["GITHUB_SHA"],
+              "source_ref": os.environ["GITHUB_REF"],
+              "runner": "ubuntu-24.04",
+              "build_command": "./gradlew --no-daemon --stacktrace assembleDebug",
+              "upstream": {
+                  "repository": "tumuyan/RealSR-NCNN-Android",
+                  "commit": os.environ["UPSTREAM_SHA"],
+                  "runtime_asset_source": "official 1.13.2 APK",
+                  "runtime_asset_sha256": engine_apk_sha,
+              },
+              "branding": {
+                  "source": "review-temp/WhiteFlood_BG_Remover_App/logo.png",
+                  "sha256": logo_sha,
+                  "launcher_resource": "@drawable/wf_logo",
+              },
+              "scope": [
+                  "android-arm64-pilot",
+                  "local-upscale",
+                  "2x",
+                  "4x",
+                  "engine-preflight",
+                  "output-contract-guard",
+                  "failure-chain-fix",
+                  "exit-code-diagnostics",
+              ],
+              "runtime_device_verified": False,
+          }
+          out = Path("artifacts/evidence.json")
+          out.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+          Path("artifacts/evidence.md").write_text(
+              "# WhiteFlood Android Pilot v0.1.2 Build Evidence\n\n"
+              f"- Revision: `{evidence['source_revision']}`\n"
+              f"- Upstream: `{evidence['upstream']['commit']}`\n"
+              f"- Runtime assets: official upstream 1.13.2 APK `{engine_apk_sha}`\n"
+              f"- WhiteFlood logo: `{logo_sha}`\n"
+              f"- APK SHA-256: `{apk_sha}`\n"
+              f"- APK bytes: `{apk_size}`\n"
+              "- Overlay syntax/preflight: PASS\n"
+              "- CI build: PASS\n"
+              "- Physical Android runtime v0.1.2: PENDING\n",
+              encoding="utf-8",
+          )
+          PY
+          cp dependency-sha256.txt artifacts/dependency-sha256.txt
+          ls -lh artifacts
+
+      - name: Upload APK evidence bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: WhiteFlood-Android-Pilot-v0.1.2
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14

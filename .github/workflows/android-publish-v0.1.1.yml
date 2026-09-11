@@ -1,0 +1,99 @@
+name: Publish WhiteFlood Android v0.1.1
+
+on:
+  push:
+    branches:
+      - feat/android-upscale-mvp
+    paths:
+      - .github/workflows/android-publish-v0.1.1.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN_ID: "34495642069"
+      ARTIFACT_NAME: WhiteFlood-Android-Pilot-v0.1.1
+      RELEASE_TAG: android-v0.1.1
+      RELEASE_TARGET: 917844d91d83f81dd164592006ef1cd981b72e13
+    steps:
+      - name: Download verified APK artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifact
+          gh run download "$BUILD_RUN_ID" \
+            --repo "$GH_REPO" \
+            --name "$ARTIFACT_NAME" \
+            --dir release-artifact
+          test -f release-artifact/WhiteFlood-Android-Pilot-v0.1.1.apk
+          test -f release-artifact/WhiteFlood-Android-Pilot-v0.1.1.sha256
+          test -f release-artifact/dependency-sha256.txt
+          test -f release-artifact/evidence.json
+          test -f release-artifact/evidence.md
+          cd release-artifact
+          sed 's#  artifacts/#  #' WhiteFlood-Android-Pilot-v0.1.1.sha256 | sha256sum -c -
+          cd ..
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## WhiteFlood Android Pilot v0.1.1
+
+          Runtime/UI fix release untuk pilot Android WhiteFlood.
+
+          ### Perbaikan utama
+          - Memperbaiki preview foto setelah gambar dipilih dari Android picker.
+          - Input `content://` dimaterialisasikan ke file lokal aplikasi sebelum dikirim ke engine NCNN.
+          - Menambahkan validasi agar Upscale tidak berjalan ketika file input gagal dimuat.
+          - Memperbaiki jalur URI/file pada viewer preview.
+          - Mendesain ulang Setelan agar konsisten dengan dark UI WhiteFlood.
+          - Menggunakan logo WhiteFlood sebagai branding/launcher resource.
+          - Menyamakan runtime asset dengan APK resmi upstream RealSR-NCNN-Android 1.13.2.
+
+          ### Scope pilot
+          - Upscale lokal **2x** dan **4x**.
+          - Real-ESRGAN / NCNN dengan jalur Vulkan pada perangkat yang mendukung.
+          - Foto tetap diproses lokal tanpa upload ke server.
+
+          ### Verifikasi
+          - GitHub Actions build: **PASS** pada run `34495642069`.
+          - APK SHA-256: `466eb8f6027281e5654d81e70162d2f4f426929e9c6d8060a0ba3ab5e9fe486c`.
+          - Runtime asset upstream 1.13.2 diverifikasi dengan SHA-256 sebelum build.
+          - Checksum APK, dependency checksum, dan build evidence disertakan sebagai asset release.
+
+          ### Batas verifikasi
+          - Build CI sudah lulus.
+          - Runtime v0.1.1 pada perangkat Android fisik masih perlu diverifikasi setelah instalasi.
+          - Release tetap ditandai **pre-release** sampai flow pilih foto → preview → upscale → simpan terbukti pada perangkat nyata.
+
+          **Built by Bima Chakti**  
+          © 2026 Bima Chakti
+          EOF
+
+      - name: Publish GitHub pre-release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; leaving it unchanged."
+            exit 0
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            release-artifact/WhiteFlood-Android-Pilot-v0.1.1.apk \
+            release-artifact/WhiteFlood-Android-Pilot-v0.1.1.sha256 \
+            release-artifact/dependency-sha256.txt \
+            release-artifact/evidence.json \
+            release-artifact/evidence.md \
+            --repo "$GH_REPO" \
+            --target "$RELEASE_TARGET" \
+            --title "WhiteFlood Android Pilot v0.1.1" \
+            --notes-file release-notes.md \
+            --prerelease
