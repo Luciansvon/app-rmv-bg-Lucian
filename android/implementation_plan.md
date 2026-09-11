@@ -143,3 +143,61 @@ Runtime HP:
 - ikon WhiteFlood tampil pada launcher/app surface yang tersedia.
 
 Bugfix yang benar-benar dikerjakan nanti wajib dicatat ke `docs/ERROR_SOLUTIONS.md` dan `docs/WORKLOG.md` sesuai aturan repo.
+
+---
+
+# v0.1.2 — Runtime Failure / Output Guard Fix Plan
+
+Status: **Disetujui Bima pada 2026-09-11 melalui instruksi "fix, ikuti aturan bima dev, buat release" setelah bukti runtime v0.1.1 dikirim.**
+
+## Bukti runtime
+
+Pada perangkat Android nyata, foto berhasil dipilih dan tampil di preview, tetapi Upscale berhenti sekitar 0,13 detik dengan log:
+
+`cp: bad 'output.png': No such file or directory`
+
+Ini membuktikan `output.png` tidak tersedia ketika tahap save/copy dijalankan. Upstream merangkai command engine dan export dengan separator `;`, sehingga tahap copy tetap berjalan walaupun engine gagal. Akibatnya error `cp` dapat menutupi penyebab kegagalan engine yang sebenarnya.
+
+## Requirement v0.1.2
+
+1. **Jangan mask kegagalan engine dengan tahap copy/save**
+   - export hanya boleh berjalan jika command Upscale sukses;
+   - gunakan command chaining yang menghentikan jalur ketika engine gagal;
+   - validasi `output.png` sebelum save/copy.
+
+2. **Preflight runtime sebelum Upscale**
+   - pastikan `input.png` valid;
+   - pastikan binary `realsr-ncnn` tersedia;
+   - pastikan folder model untuk preset 2x/4x tersedia dan tidak kosong;
+   - error ditampilkan dengan bahasa yang bisa dipahami user.
+
+3. **Pertahankan error asli engine**
+   - stdout/stderr engine tetap masuk ke log;
+   - bila output tidak dibuat walau command selesai, tampilkan pesan WhiteFlood yang eksplisit;
+   - jangan mengklaim Vulkan/GPU sebagai root cause sebelum log runtime membuktikannya.
+
+4. **Release evidence B.I.M.A-DEV-INFRA**
+   - build harus menghasilkan APK, SHA-256, dependency checksum, `evidence.json`, dan `evidence.md`;
+   - shared repository audit tetap berjalan;
+   - release v0.1.2 tetap `pre-release` sampai 2x dan 4x berhasil pada perangkat nyata.
+
+## Verification v0.1.2
+
+CI wajib:
+- overlay script berhasil diterapkan ke upstream yang dipin;
+- Gradle `assembleDebug` lulus;
+- artifact dan digest dibuat;
+- shared audit B.I.M.A-DEV-INFRA lulus.
+
+Runtime HP setelah release:
+- pilih foto -> preview tampil;
+- 2x: bila engine berhasil, `output.png` harus ada sebelum save;
+- bila engine gagal, log harus menunjukkan error engine dan tidak lagi diganti error `cp output.png`;
+- 4x diuji terpisah setelah 2x;
+- bila log menunjukkan masalah Vulkan/GPU, mode CPU diuji sebagai diagnosis terpisah, bukan fallback diam-diam.
+
+## Batas perubahan
+
+- Tidak mengubah model, binary upstream, atau source desktop Windows.
+- Tidak menambahkan auto-fallback GPU -> CPU karena belum ada bukti bahwa itu aman untuk performa/thermal semua perangkat.
+- Tidak menambahkan fitur di luar root cause runtime ini.
