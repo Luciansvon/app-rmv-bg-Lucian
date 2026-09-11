@@ -284,3 +284,57 @@ Build release terakhir yang dicek:
   artefak lain di folder tersebut dipertahankan.
 - `build_exe.py` menerima `WHITEFLOOD_DIST_PATH`, `WHITEFLOOD_WORK_PATH`, dan
   `WHITEFLOOD_SPEC_PATH` untuk build staging terisolasi.
+
+## Patch arsitektur v2.7.0-rc1 - Watermark Creator Issue #7
+
+### Batas fitur
+
+Watermark Creator adalah workflow **menambahkan watermark secara eksplisit**, terpisah dari workflow Remove Watermark yang menghapus watermark. Tool lain tetap tidak boleh menempelkan watermark ke output secara otomatis.
+
+Source baru dipisahkan agar logic tambah/hapus tidak tercampur:
+
+```text
+review-temp/WhiteFlood_BG_Remover_App/
+|-- whiteflood_app.py                  # source utama v2.6.x tetap tidak direwrite
+|-- whiteflood_app_issue7.py           # wrapper RC yang membuka Creator
+`-- features/
+    |-- watermark/                      # REMOVE watermark: mask/LaMa/video
+    `-- watermark_creator/              # ADD watermark
+        |-- visible.py                  # text/logo compositor
+        |-- invisible.py                # DCT-QIM v0 experimental + verify
+        |-- presets.py                  # schema preset versioned
+        |-- service.py                  # create/save/batch/collision safety
+        |-- benchmark.py                # attack matrix + report evidence
+        `-- ui.py                       # dialog Creator + worker/batch UI
+```
+
+### Pipeline Creator
+
+```mermaid
+flowchart TD
+    SRC["Source image"] --> MODE{"Mode"}
+    MODE -->|Visible| VIS["Visible compositor"]
+    MODE -->|Invisible| INV["DCT-QIM experimental embed"]
+    MODE -->|Hybrid| INV
+    INV --> VIS
+    VIS --> META["Preserve supported metadata"]
+    INV --> META
+    META --> DIM["Dimension validation"]
+    DIM --> SAFE["Collision-safe export"]
+```
+
+- Visible mendukung teks/logo, opacity, rotation, scale/font size, stroke, shadow, sembilan anchor, offset, margin, tile horizontal/vertical/full/diagonal, dan spacing.
+- Visible mengomposit pada resolusi sumber. Preview boleh menggunakan widget existing, tetapi file output tidak di-resize atau di-crop oleh Creator.
+- Invisible memakai frame versioned dengan magic, payload ringkas, dan CRC32. Payload membawa `owner_id`, `file_id`, `created_at`, `short_hash`, dan `schema_version`.
+- Invisible v0 memakai blok DCT 8x8 + QIM parity dan tiled phase mapping. Statusnya tetap **experimental**, bukan production-ready, sampai benchmark corpus gambar nyata lulus.
+- Verify hanya mengembalikan payload bila magic/frame/checksum valid. Kegagalan dibaca sebagai `Not detected / unreadable`, tidak mengarang owner/file.
+- Hybrid menjalankan invisible embed lebih dulu lalu visible composite, sesuai kontrak Issue #7.
+- Batch Creator mendukung recursive folder dan preserve relative structure. Folder output tidak boleh sama dengan source, nama output collision-safe, dan cancellation berhenti setelah file aktif selesai.
+
+### Evidence dan packaging RC
+
+- `.github/workflows/windows-watermark-creator-rc.yml` adalah project-specific build workflow untuk RC ini; bukan pengganti shared B.I.M.A infra.
+- Runner Windows dipin ke `windows-2025`, Python 3.11, permission `contents: read`, timeout 45 menit, dan action eksternal dipin ke commit SHA.
+- Checkout wajib `lfs: true` karena FFmpeg runtime binary ditrack lewat Git LFS.
+- Gate berurutan: install declared dependencies -> `py_compile` -> seluruh unittest repo -> PyInstaller -> SHA-256/size evidence -> upload artifact.
+- Build/package PASS tidak membuktikan GUI, PC kantor, GPU/Vulkan, atau robustness invisible pada foto nyata. Gate itu harus tetap `UNKNOWN` sampai benar-benar dijalankan pada environment yang disebutkan.
