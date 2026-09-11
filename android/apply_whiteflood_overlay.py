@@ -22,8 +22,8 @@ def patch_build_gradle(path: Path) -> None:
         'applicationId "com.bimachakti.whiteflood"',
         "applicationId",
     )
-    text = replace_once(text, "versionCode 52", "versionCode 2", "versionCode")
-    text = replace_once(text, "versionName '1.13.2'", "versionName '0.1.1'", "versionName")
+    text = replace_once(text, "versionCode 52", "versionCode 3", "versionCode")
+    text = replace_once(text, "versionName '1.13.2'", "versionName '0.1.2'", "versionName")
     text = replace_once(
         text,
         'resValue "string", "app_name", "RealSR Debug"',
@@ -250,6 +250,102 @@ def patch_main_activity(path: Path) -> None:
             {'''
     text = replace_once(text, old_run_start, new_run_start, "upscale input guard")
 
+    old_output_delete = '''                deleteFile(outputFile);
+                if (inputIsGifAnimation) {'''
+    new_output_delete = '''                if (cmd.toString().startsWith("./realsr-ncnn")) {
+                    File engineFile = new File(dir, "realsr-ncnn");
+                    if (!engineFile.isFile() || engineFile.length() <= 0) {
+                        logTextView.setText("Engine Upscale belum siap. Tutup lalu buka kembali aplikasi agar asset lokal dipasang ulang.");
+                        Toast.makeText(this, "Engine Upscale tidak ditemukan", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    String requiredModel = "";
+                    if (cmd.toString().contains("models-Real-ESRGAN-SourceBook")) {
+                        requiredModel = "models-Real-ESRGAN-SourceBook";
+                    } else if (cmd.toString().contains("models-Real-ESRGANv3-general")) {
+                        requiredModel = "models-Real-ESRGANv3-general";
+                    }
+
+                    if (!requiredModel.isEmpty()) {
+                        File modelDir = new File(dir, requiredModel);
+                        File[] modelFiles = modelDir.listFiles();
+                        if (!modelDir.isDirectory() || modelFiles == null || modelFiles.length == 0) {
+                            logTextView.setText("Model Upscale lokal tidak lengkap: " + requiredModel + ". Instal ulang APK agar asset dipulihkan.");
+                            Toast.makeText(this, "Model Upscale tidak lengkap", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                    }
+                }
+
+                deleteFile(outputFile);
+                if (inputIsGifAnimation) {'''
+    text = replace_once(text, old_output_delete, new_output_delete, "engine/model preflight")
+
+    old_execution_chain = '''        CommandBuilder builder = new CommandBuilder();
+        builder.append(finalCmd);
+
+        if (save) {
+            String export_cmd = saveOutputCmd();
+            if (inputIsGifAnimation)
+                builder.append(";./magick -delay " + inputGifDelay + " output.png/* -loop 0 " + ShellUtils.escapeShellArgument(outputSavePath));
+            else
+                builder.append(";" + export_cmd);
+        } else {
+            outputSavePath = "";
+        }'''
+    new_execution_chain = '''        CommandBuilder builder = new CommandBuilder();
+        builder.append(finalCmd);
+
+        boolean whiteFloodSingleOutput = run_ncnn && !inputIsGifAnimation
+                && !export_dir && cmd.contains("output.png");
+        if (whiteFloodSingleOutput) {
+            builder.append("&& { test -s output.png || { echo \\\"WhiteFlood: engine selesai tanpa membuat output.png.\\\"; exit 74; }; }");
+        }
+
+        if (save) {
+            String export_cmd = saveOutputCmd();
+            if (inputIsGifAnimation)
+                builder.append("&& ./magick -delay " + inputGifDelay + " output.png/* -loop 0 " + ShellUtils.escapeShellArgument(outputSavePath));
+            else
+                builder.append("&& " + export_cmd);
+        } else {
+            outputSavePath = "";
+        }'''
+    text = replace_once(text, old_execution_chain, new_execution_chain, "engine/output/save command chain")
+
+    old_completion = '''                    String logResult = progressLogHelper.getCompletionSummary(success, modelName, run_ncnn);
+
+                    if (bench_mark_mode) {'''
+    new_completion = '''                    String logResult = progressLogHelper.getCompletionSummary(success, modelName, run_ncnn);
+                    if (!success && run_ncnn && !inputIsGifAnimation) {
+                        File expectedOutput = new File(dir, "output.png");
+                        if (!expectedOutput.isFile() || expectedOutput.length() <= 0) {
+                            logResult = "\\nWhiteFlood: Upscale berhenti sebelum file hasil dibuat. Detail engine ada di log di atas.\\n"
+                                    + logResult;
+                        }
+                    }
+
+                    if (bench_mark_mode) {'''
+    text = replace_once(text, old_completion, new_completion, "user-facing runtime failure summary")
+
+    path.write_text(text, encoding="utf-8")
+
+
+def patch_image_processor(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    old_exit = '''            int exitCode = currentProcess.waitFor();
+            success = (exitCode == 0);
+            Log.d(TAG, "Process finished with exit code: " + exitCode);'''
+    new_exit = '''            int exitCode = currentProcess.waitFor();
+            success = (exitCode == 0);
+            if (!success) {
+                String exitLine = "WhiteFlood: proses berhenti dengan exit code " + exitCode;
+                callback.onProgress(exitLine);
+                resultBuilder.append(exitLine).append("\\n");
+            }
+            Log.d(TAG, "Process finished with exit code: " + exitCode);'''
+    text = replace_once(text, old_exit, new_exit, "process exit-code diagnostics")
     path.write_text(text, encoding="utf-8")
 
 
@@ -311,6 +407,10 @@ def apply(upstream_root: Path, overlay_root: Path) -> None:
     patch_main_activity(
         app_root
         / "src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java"
+    )
+    patch_image_processor(
+        app_root
+        / "src/main/java/com/tumuyan/ncnn/realsr/ImageProcessor.java"
     )
     patch_setting_activity(
         app_root
@@ -396,6 +496,24 @@ def apply(upstream_root: Path, overlay_root: Path) -> None:
         raise RuntimeError(
             f"Settings layout missing upstream-required ids: {missing_settings}"
         )
+
+    build_text = (app_root / "build.gradle").read_text(encoding="utf-8")
+    main_text = (
+        app_root / "src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java"
+    ).read_text(encoding="utf-8")
+    processor_text = (
+        app_root / "src/main/java/com/tumuyan/ncnn/realsr/ImageProcessor.java"
+    ).read_text(encoding="utf-8")
+    required_runtime_markers = (
+        "versionName '0.1.2'",
+        "test -s output.png",
+        "Engine Upscale belum siap",
+        "proses berhenti dengan exit code",
+    )
+    combined = build_text + main_text + processor_text
+    missing_markers = [item for item in required_runtime_markers if item not in combined]
+    if missing_markers:
+        raise RuntimeError(f"WhiteFlood v0.1.2 runtime guards missing: {missing_markers}")
 
 
 if __name__ == "__main__":
