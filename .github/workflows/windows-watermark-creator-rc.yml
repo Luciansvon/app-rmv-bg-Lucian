@@ -80,9 +80,55 @@ jobs:
         run: |
           $exe = Join-Path $env:GITHUB_WORKSPACE 'artifacts\dist\WhiteFlood_BG_Remover.exe'
           if (-not (Test-Path $exe)) { throw "Expected EXE not found: $exe" }
+
           $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          $bytes = (Get-Item $exe).Length
           "$hash  WhiteFlood_BG_Remover.exe" | Set-Content -Encoding ascii artifacts\WhiteFlood_BG_Remover.sha256
-          python -c "import json,os,pathlib,platform; p=pathlib.Path(r'artifacts/dist/WhiteFlood_BG_Remover.exe'); h=pathlib.Path(r'artifacts/WhiteFlood_BG_Remover.sha256').read_text().split()[0]; d={'schema_version':1,'project':'WhiteFlood','feature':'Issue #7 Hybrid Watermark Creator','artifact':p.name,'artifact_sha256':h,'artifact_size_bytes':p.stat().st_size,'source_revision':os.environ['GITHUB_SHA'],'source_ref':os.environ['GITHUB_REF'],'runner':'windows-2025','python':platform.python_version(),'checks':{'py_compile':'PASS','unittest':'PASS','pyinstaller_package':'PASS','gui_runtime':'UNKNOWN','office_pc_runtime':'UNKNOWN','real_image_invisible_corpus':'UNKNOWN'},'invisible_watermark_status':'experimental','release_authorized':False}; pathlib.Path(r'artifacts/evidence.json').write_text(json.dumps(d,indent=2)+'\n',encoding='utf-8'); pathlib.Path(r'artifacts/evidence.md').write_text(f'# WhiteFlood Windows v2.7.0-rc1 Evidence\n\n- Revision: `{d[\"source_revision\"]}`\n- Runner: `{d[\"runner\"]}`\n- Python: `{d[\"python\"]}`\n- EXE bytes: `{d[\"artifact_size_bytes\"]}`\n- EXE SHA-256: `{d[\"artifact_sha256\"]}`\n- Syntax: PASS\n- Repository tests: PASS\n- PyInstaller package: PASS\n- GUI runtime: UNKNOWN\n- Office PC runtime: UNKNOWN\n- Invisible real-image corpus: UNKNOWN\n- Invisible status: experimental\n- Release authorization: false\n',encoding='utf-8')"
+
+          $evidence = [ordered]@{
+            schema_version = 1
+            project = 'WhiteFlood'
+            feature = 'Issue #7 Hybrid Watermark Creator'
+            artifact = 'WhiteFlood_BG_Remover.exe'
+            artifact_sha256 = $hash
+            artifact_size_bytes = $bytes
+            source_revision = $env:GITHUB_SHA
+            source_ref = $env:GITHUB_REF
+            runner = 'windows-2025'
+            python = (python -c "import platform; print(platform.python_version())")
+            checks = [ordered]@{
+              py_compile = 'PASS'
+              unittest = 'PASS'
+              pyinstaller_package = 'PASS'
+              gui_runtime = 'UNKNOWN'
+              office_pc_runtime = 'UNKNOWN'
+              real_image_invisible_corpus = 'UNKNOWN'
+            }
+            invisible_watermark_status = 'experimental'
+            release_authorized = $false
+          }
+
+          $evidence | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 artifacts\evidence.json
+
+          $markdown = @"
+          # WhiteFlood Windows v2.7.0-rc1 Evidence
+
+          - Revision: `$($env:GITHUB_SHA)`
+          - Runner: `windows-2025`
+          - Python: `$($evidence.python)`
+          - EXE bytes: `$bytes`
+          - EXE SHA-256: `$hash`
+          - Syntax: PASS
+          - Repository tests: PASS
+          - PyInstaller package: PASS
+          - GUI runtime: UNKNOWN
+          - Office PC runtime: UNKNOWN
+          - Invisible real-image corpus: UNKNOWN
+          - Invisible status: experimental
+          - Release authorization: false
+          "@
+          $markdown | Set-Content -Encoding utf8 artifacts\evidence.md
+
           Get-ChildItem artifacts\dist
           Get-Content artifacts\evidence.md
 
