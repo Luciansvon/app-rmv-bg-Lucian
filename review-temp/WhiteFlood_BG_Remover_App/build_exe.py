@@ -1,7 +1,6 @@
 import os
 import sys
 import subprocess
-import shutil
 
 
 app_dir = os.path.abspath(os.path.dirname(__file__))
@@ -18,14 +17,10 @@ missing_ffmpeg_files = [
     if not os.path.isfile(os.path.join(ffmpeg_dir, name))
 ]
 if missing_ffmpeg_files:
-    print(
-        "[ERROR] Binary FFmpeg wajib ada sebelum build: "
-        + ", ".join(missing_ffmpeg_files)
-    )
+    print("[ERROR] Binary FFmpeg wajib ada sebelum build: " + ", ".join(missing_ffmpeg_files))
     print(f"[ERROR] Folder yang diperiksa: {os.path.abspath(ffmpeg_dir)}")
     sys.exit(1)
 
-# Ensure onnxruntime capi directory is in PATH for PyInstaller isolated subprocesses
 try:
     import onnxruntime
     capi_dir = os.path.abspath(os.path.join(os.path.dirname(onnxruntime.__file__), "capi"))
@@ -42,30 +37,17 @@ except Exception as e:
 
 cmd = [
     sys.executable, "-m", "PyInstaller",
-    "--noconfirm",
-    "--clean",
-    "--onefile",
-    "--windowed",
+    "--noconfirm", "--clean", "--onefile", "--windowed",
     f"--icon={os.path.join(app_dir, 'logo.ico')}",
-    bundled_data("logo.ico", "."),
-    bundled_data("logo.png", "."),
-    bundled_data("realesrgan", "realesrgan"),
-    bundled_data("assets", "assets"),
+    bundled_data("logo.ico", "."), bundled_data("logo.png", "."),
+    bundled_data("realesrgan", "realesrgan"), bundled_data("assets", "assets"),
     bundled_data("ffmpeg", "ffmpeg"),
-    "--collect-all=customtkinter",
-    "--collect-all=onnxruntime",
-    "--collect-all=rembg",
-    "--collect-all=truststore",
-    "--collect-all=pymatting",
-    "--collect-all=vtracer",
-    "--copy-metadata=pymatting",
-    "--copy-metadata=truststore",
+    "--collect-all=customtkinter", "--collect-all=onnxruntime", "--collect-all=rembg",
+    "--collect-all=truststore", "--collect-all=pymatting", "--collect-all=vtracer",
+    "--copy-metadata=pymatting", "--copy-metadata=truststore",
     "--hidden-import=psutil",
-    "--exclude-module=PyQt5",
-    "--exclude-module=PyQt6",
-    "--exclude-module=PySide2",
-    "--exclude-module=PySide6",
-    "--exclude-module=matplotlib",
+    "--exclude-module=PyQt5", "--exclude-module=PyQt6", "--exclude-module=PySide2",
+    "--exclude-module=PySide6", "--exclude-module=matplotlib",
 ]
 
 dist_path = os.environ.get("WHITEFLOOD_DIST_PATH")
@@ -79,28 +61,24 @@ if spec_path:
     cmd.extend(["--specpath", os.path.abspath(spec_path)])
 cmd.extend([
     "--name=WhiteFlood_BG_Remover",
-    os.path.join(app_dir, "whiteflood_app.py"),
+    os.path.join(app_dir, "whiteflood_app_issue7.py"),
 ])
 
 print("[INFO] Running PyInstaller build command:")
 print(" ".join(cmd))
-
 p = subprocess.run(cmd)
 if p.returncode != 0:
     print(f"[ERROR] PyInstaller failed with exit code {p.returncode}")
     sys.exit(p.returncode)
 
-exe_path = os.path.join(
-    os.path.abspath(dist_path) if dist_path else "dist",
-    "WhiteFlood_BG_Remover.exe",
-)
+exe_path = os.path.join(os.path.abspath(dist_path) if dist_path else "dist", "WhiteFlood_BG_Remover.exe")
 if os.path.exists(exe_path):
     size_mb = os.path.getsize(exe_path) / (1024 * 1024)
-    print(f"\n========================================")
-    print(f"  BUILD SUCCESSFUL!")
+    print("\n========================================")
+    print("  BUILD SUCCESSFUL!")
     print(f"  EXE location: {os.path.abspath(exe_path)}")
     print(f"  EXE size: {size_mb:.2f} MB")
-    print(f"========================================\n")
+    print("========================================\n")
 else:
     print(f"[ERROR] EXE not found at {exe_path}")
     sys.exit(1)
