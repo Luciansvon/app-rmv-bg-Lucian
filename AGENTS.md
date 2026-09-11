@@ -86,7 +86,7 @@ Folder `build/`, `dist/`, `__pycache__/`, file `*.pyc`, dan file executable hasi
 - Nama batch harus aman dari karakter filename Windows yang ilegal.
 - Penyimpanan batch tidak boleh menimpa file lama secara diam-diam; gunakan collision safety.
 - Kredit `Built by Bima Chakti` dan `© 2026 Bima Chakti` hanya tampil di UI aplikasi.
-- Jangan menambahkan watermark ke file gambar output.
+- Tool selain Watermark Creator tidak boleh menambahkan watermark ke file gambar output. Watermark Creator hanya boleh menambahkan watermark setelah tindakan eksplisit user dan tidak boleh memodifikasi file sumber secara diam-diam.
 - Metadata yang sudah dijanjikan di README tidak boleh hilang tanpa keputusan perubahan produk.
 
 ## UI dan pengalaman pengguna

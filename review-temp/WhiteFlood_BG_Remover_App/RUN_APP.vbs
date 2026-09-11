@@ -6,7 +6,7 @@ Set fileSystem = CreateObject("Scripting.FileSystemObject")
 
 baseDir = fileSystem.GetParentFolderName(WScript.ScriptFullName)
 exePath = baseDir & "\dist\WhiteFlood_BG_Remover.exe"
-scriptPath = baseDir & "\whiteflood_app.py"
+scriptPath = baseDir & "\whiteflood_app_issue7.py"
 shell.CurrentDirectory = baseDir
 
 If fileSystem.FileExists(exePath) Then

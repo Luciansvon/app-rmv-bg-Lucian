@@ -112,7 +112,7 @@ Status: binary source, preflight build, dan build EXE selesai; runtime GUI masih
 - Menambahkan `ffmpeg.exe`, `ffprobe.exe`, `LICENSE.txt`, dan `checksums.sha256` ke folder source `ffmpeg/`.
 - Mem-pin BtbN `autobuild-2026-08-09-13-03`, asset FFmpeg 8.1.2 LGPL Windows x64.
 - Menambahkan preflight `build_exe.py` agar build berhenti dengan pesan jelas jika binary video hilang.
-- Menambahkan unit test yang menjalankan `ffmpeg.exe -version` dan `ffprobe.exe -version`.
+- Menambahkan unit test yang menjalankan kedua binary dengan `-version`.
 
 ### Bukti verifikasi aktual
 
@@ -555,3 +555,60 @@ push, dan release publik v2.6.3 selesai.
 - Jaringan/proxy PC kantor tidak tersedia di laptop build. Auto fallback telah
   diuji memakai BITS nyata, tetapi keberhasilan melewati policy kantor tetap
   perlu dites pada PC tersebut.
+
+---
+
+## 2026-09-11 - Issue #7 Hybrid Watermark Creator v2.7.0-rc1
+
+Status: implementasi source dan Windows CI build selesai; release diminta sebagai pre-release. GUI runtime, PC kantor, dan corpus foto nyata invisible watermark masih belum diverifikasi.
+
+### Keputusan dan implementasi
+
+- Menambahkan Watermark Creator sebagai fitur terpisah dari Remove Watermark.
+- Mode tersedia: Visible, Invisible (experimental), dan Hybrid (experimental).
+- Visible watermark mendukung text/logo raster, opacity, rotation, stroke, shadow, 9 anchor, offset, margin, serta pola single/tile/repeat.
+- Invisible watermark memakai eksperimen `DCT-QIM-v0` dengan payload owner/file/time/hash/schema dan CRC32.
+- Pipeline hybrid menjalankan invisible terlebih dahulu lalu visible, mempertahankan dimensi sumber dan collision-safe export.
+- Menambahkan preset JSON, batch recursive dengan struktur relatif, cancellation, verify/extract, dan benchmark serangan minimum Issue #7.
+- UI baru ditambahkan melalui `whiteflood_app_issue7.py` tanpa mencampur implementasi ke folder Remove Watermark lama.
+- Aturan repo diperjelas: hanya Watermark Creator yang boleh menambahkan watermark, dan hanya setelah tindakan eksplisit user.
+
+### Bukti verifikasi aktual
+
+- Workflow Windows run `34583280356` selesai `success` pada Windows Server 2025.
+- Compile source Issue #7: PASS.
+- `python -m unittest discover -s tests -v`: 44/44 PASS.
+- PyInstaller one-file/windowed: PASS.
+- BIMA evidence bundle: PASS.
+- Artifact upload: PASS.
+- Artifact workflow: `WhiteFlood-Windows-v2.7.0-rc1-83d070a5007ba87c9939ed11f07ccd3868c23305`.
+- Build log mencatat EXE `WhiteFlood_BG_Remover.exe` berukuran 243,549,392 bytes (~232.27 MB).
+- Benchmark synthetic fixture untuk invisible watermark mencapai recovery 10/10 serangan minimum setelah perbaikan crop phase mapping; status tetap experimental karena belum diuji pada corpus foto nyata.
+
+### Kegagalan CI yang diperbaiki
+
+- Run pertama gagal karena Git LFS pointer FFmpeg dijalankan sebagai EXE; checkout diperbaiki dengan `lfs: true`.
+- Run kedua membangun EXE dengan sukses tetapi gagal membuat evidence karena nested quote pada `python -c`; evidence generator dipindahkan ke PowerShell native.
+- Root cause dan bukti dicatat di `docs/ERROR_SOLUTIONS.md`.
+
+### Batas verifikasi / UNKNOWN
+
+- GUI runtime EXE Issue #7 pada Windows user: UNKNOWN.
+- Runtime pada PC kantor: UNKNOWN.
+- Invisible watermark pada corpus foto produk nyata: UNKNOWN.
+- Robustness terhadap editing di luar benchmark synthetic tidak diklaim production-ready.
+- Release v2.7.0-rc1 harus tetap pre-release sampai gate runtime di atas mendapat bukti.
+
+### File utama
+
+- `AGENTS.md`
+- `user.md`
+- `implementation_plan.md`
+- `docs/ARCHITECTURE.md`
+- `docs/ERROR_SOLUTIONS.md`
+- `docs/WORKLOG.md`
+- `.github/workflows/windows-watermark-creator-rc.yml`
+- `review-temp/WhiteFlood_BG_Remover_App/whiteflood_app_issue7.py`
+- `review-temp/WhiteFlood_BG_Remover_App/features/watermark_creator/`
+- `review-temp/WhiteFlood_BG_Remover_App/build_exe.py`
+- `tests/test_watermark_creator.py`
