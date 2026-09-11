@@ -68,11 +68,14 @@ jobs:
 
           test -d upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr
           test -f upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr/realsr-ncnn
+          test -d upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr/models-Real-ESRGAN-SourceBook
+          test -d upstream/RealSR-NCNN-Android-GUI/app/src/main/assets/realsr/models-Real-ESRGANv3-general
 
       - name: Apply WhiteFlood Android overlay
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m py_compile android/apply_whiteflood_overlay.py
           python3 android/apply_whiteflood_overlay.py \
             --upstream-root upstream \
             --overlay-root android/overlay
@@ -83,6 +86,12 @@ jobs:
             upstream/RealSR-NCNN-Android-GUI/app/src/main/res/drawable-nodpi/wf_logo.png
           grep -q 'android:icon="@drawable/wf_logo"' \
             upstream/RealSR-NCNN-Android-GUI/app/src/main/AndroidManifest.xml
+          grep -q "versionName '0.1.2'" \
+            upstream/RealSR-NCNN-Android-GUI/app/build.gradle
+          grep -q 'test -s output.png' \
+            upstream/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java
+          grep -q 'proses berhenti dengan exit code' \
+            upstream/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/ImageProcessor.java
 
       - name: Build debug APK
         shell: bash
@@ -104,9 +113,9 @@ jobs:
           fi
 
           mkdir -p artifacts
-          APK_OUT="artifacts/WhiteFlood-Android-Pilot-v0.1.1.apk"
+          APK_OUT="artifacts/WhiteFlood-Android-Pilot-v0.1.2.apk"
           cp "${APK_FILES[0]}" "$APK_OUT"
-          sha256sum "$APK_OUT" | tee artifacts/WhiteFlood-Android-Pilot-v0.1.1.sha256
+          sha256sum "$APK_OUT" | tee artifacts/WhiteFlood-Android-Pilot-v0.1.2.sha256
 
           APK_SHA=$(sha256sum "$APK_OUT" | awk '{print $1}')
           APK_SIZE=$(stat -c '%s' "$APK_OUT")
@@ -123,7 +132,7 @@ jobs:
           evidence = {
               "schema_version": 1,
               "project": "WhiteFlood",
-              "artifact": "WhiteFlood-Android-Pilot-v0.1.1.apk",
+              "artifact": "WhiteFlood-Android-Pilot-v0.1.2.apk",
               "artifact_sha256": apk_sha,
               "artifact_size_bytes": int(apk_size),
               "source_revision": os.environ["GITHUB_SHA"],
@@ -146,23 +155,26 @@ jobs:
                   "local-upscale",
                   "2x",
                   "4x",
-                  "preview-fix",
-                  "settings-redesign",
+                  "engine-preflight",
+                  "output-contract-guard",
+                  "failure-chain-fix",
+                  "exit-code-diagnostics",
               ],
               "runtime_device_verified": False,
           }
           out = Path("artifacts/evidence.json")
           out.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
           Path("artifacts/evidence.md").write_text(
-              "# WhiteFlood Android Pilot v0.1.1 Build Evidence\n\n"
+              "# WhiteFlood Android Pilot v0.1.2 Build Evidence\n\n"
               f"- Revision: `{evidence['source_revision']}`\n"
               f"- Upstream: `{evidence['upstream']['commit']}`\n"
               f"- Runtime assets: official upstream 1.13.2 APK `{engine_apk_sha}`\n"
               f"- WhiteFlood logo: `{logo_sha}`\n"
               f"- APK SHA-256: `{apk_sha}`\n"
               f"- APK bytes: `{apk_size}`\n"
+              "- Overlay syntax/preflight: PASS\n"
               "- CI build: PASS\n"
-              "- Physical Android runtime: PENDING\n",
+              "- Physical Android runtime v0.1.2: PENDING\n",
               encoding="utf-8",
           )
           PY
@@ -172,7 +184,7 @@ jobs:
       - name: Upload APK evidence bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: WhiteFlood-Android-Pilot-v0.1.1
+          name: WhiteFlood-Android-Pilot-v0.1.2
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
