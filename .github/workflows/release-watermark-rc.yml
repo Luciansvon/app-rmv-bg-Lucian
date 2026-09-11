@@ -1,0 +1,130 @@
+name: Release WhiteFlood v2.7.0 RC1
+
+on:
+  push:
+    branches:
+      - feat/issue-7-watermark-creator
+    paths:
+      - '.github/workflows/release-watermark-rc.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: whiteflood-release-v2.7.0-rc1
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish Windows pre-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v2.7.0-rc1
+      TARGET_SHA: c80bfa103883d416a80576cf8df7bc4f1914e708
+      BUILD_RUN_ID: '34583280356'
+      ARTIFACT_NAME: WhiteFlood-Windows-v2.7.0-rc1-83d070a5007ba87c9939ed11f07ccd3868c23305
+      EXE_SHA256: 6f78053ca354ef7f782ef5f162b8ec4af3fb8e119eec2bf52931f3dba3201d7c
+      EXE_SIZE: '243549324'
+
+    steps:
+      - name: Download verified Windows artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh run download "$BUILD_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$ARTIFACT_NAME" \
+            --dir release
+
+      - name: Verify artifact identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe='release/dist/WhiteFlood_BG_Remover.exe'
+          test -f "$exe"
+          actual_sha="$(sha256sum "$exe" | awk '{print $1}')"
+          actual_size="$(stat -c%s "$exe")"
+          test "$actual_sha" = "$EXE_SHA256"
+          test "$actual_size" = "$EXE_SIZE"
+          grep -F "$EXE_SHA256  WhiteFlood_BG_Remover.exe" release/WhiteFlood_BG_Remover.sha256
+          grep -F '"source_revision": "83d070a5007ba87c9939ed11f07ccd3868c23305"' release/evidence.json
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## WhiteFlood v2.7.0-rc1
+
+          Pre-release Windows untuk Issue #7: **Hybrid Watermark Creator (Visible + Invisible)**.
+
+          ### Fitur utama
+          - Watermark Creator terpisah dari Remove Watermark.
+          - Mode Visible, Invisible (experimental), dan Hybrid (experimental).
+          - Visible watermark: text/logo raster, opacity, rotation, stroke, shadow, anchor, offset, margin, dan repeat/tile.
+          - Invisible watermark: DCT-QIM-v0 experimental dengan owner/file ID, timestamp, hash singkat, schema version, dan checksum.
+          - Verify/extract payload, preset JSON, batch recursive, cancellation, collision-safe export, dan benchmark serangan minimum.
+
+          ### Evidence build
+          - Windows CI run: `34583280356`.
+          - Python compile: **PASS**.
+          - Repository tests: **44/44 PASS**.
+          - PyInstaller package: **PASS**.
+          - BIMA evidence bundle: **PASS**.
+          - EXE size: `243,549,324` bytes.
+          - EXE SHA-256: `6f78053ca354ef7f782ef5f162b8ec4af3fb8e119eec2bf52931f3dba3201d7c`.
+          - Binary source revision: `83d070a5007ba87c9939ed11f07ccd3868c23305`.
+          - Release target revision: `c80bfa103883d416a80576cf8df7bc4f1914e708`; perubahan setelah binary build hanya `AGENTS.md`, `docs/ERROR_SOLUTIONS.md`, dan `docs/WORKLOG.md`.
+
+          ### Batas verifikasi
+          - GUI runtime EXE: **UNKNOWN**.
+          - Runtime PC kantor: **UNKNOWN**.
+          - Invisible watermark pada corpus foto produk nyata: **UNKNOWN**.
+          - Invisible watermark tetap berstatus **experimental**, bukan klaim production-ready.
+
+          Release ini sengaja ditandai **pre-release / RC** sampai gate runtime di atas mendapat bukti.
+
+          **Built by Bima Chakti**  
+          © 2026 Bima Chakti
+          EOF
+
+      - name: Publish pre-release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title 'WhiteFlood v2.7.0-rc1' \
+              --notes-file release-notes.md \
+              --prerelease
+            gh release upload "$TAG" \
+              release/dist/WhiteFlood_BG_Remover.exe \
+              release/WhiteFlood_BG_Remover.sha256 \
+              release/evidence.json \
+              release/evidence.md \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              release/dist/WhiteFlood_BG_Remover.exe \
+              release/WhiteFlood_BG_Remover.sha256 \
+              release/evidence.json \
+              release/evidence.md \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$TARGET_SHA" \
+              --title 'WhiteFlood v2.7.0-rc1' \
+              --notes-file release-notes.md \
+              --prerelease
+          fi
+
+      - name: Verify published release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json url,tagName,isPrerelease,targetCommitish,assets
