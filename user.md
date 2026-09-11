@@ -6,7 +6,7 @@
 - **Kredit Pengembang Visual**: Aplikasi WhiteFlood selalu menampilkan identitas:
   > **Built by Bima Chakti**
   > **© 2026 Bima Chakti**
-  *(HANYA pada antarmuka UI aplikasi — HARAM hukumnya menempelkan watermark pada file gambar output).*
+  *(HANYA pada antarmuka UI aplikasi — tool selain Watermark Creator dilarang menempelkan watermark pada file gambar output. Watermark Creator hanya boleh menambahkan watermark setelah tindakan eksplisit user dan tidak boleh memodifikasi file sumber secara diam-diam.)*
 - **Jangan pernah auto-approve plan**. Selalu buat `implementation_plan.md` dan tunggu persetujuan eksplisit dari Bima.
 - **Jangan ubah kode sebelum diminta/disetujui**.
 
