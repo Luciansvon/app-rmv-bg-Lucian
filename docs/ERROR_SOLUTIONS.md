@@ -56,7 +56,7 @@ Perubahan yang dilakukan.
 
 ### Perlindungan regresi
 
-Test atau pemeriksaan yang ditambahkan.
+Test atau pemeriksaan manual yang relevan.
 
 ### Bukti verifikasi aktual
 
@@ -729,3 +729,74 @@ Status: Diperbaiki; GUI runtime masih pending
 - `review-temp/WhiteFlood_BG_Remover_App/features/watermark/mask_canvas.py`
 - `tests/test_features.py`
 - `docs/ARCHITECTURE.md`
+
+## ERR-014 - Windows CI membaca pointer Git LFS sebagai FFmpeg executable
+
+Tanggal: 2026-09-11
+Versi: 2.7.0-rc1
+Area: Packaging | CI
+Status: Diverifikasi
+
+### Gejala
+
+Workflow Windows pertama untuk Issue #7 gagal pada regression test `test_bundled_ffmpeg_tools_are_present_and_runnable` dengan `WinError 216` saat mencoba menjalankan binary FFmpeg.
+
+### Root cause
+
+`actions/checkout` belum mengambil objek Git LFS. File `ffmpeg.exe` dan `ffprobe.exe` yang ada di checkout hanya pointer text Git LFS, bukan executable Windows sebenarnya.
+
+### Solusi
+
+Checkout workflow diubah menjadi `lfs: true` sehingga binary runtime diambil sebelum test dan build.
+
+### Perlindungan regresi
+
+Test repository yang sama tetap menjalankan FFmpeg/FFprobe `-version` pada Windows CI.
+
+### Bukti verifikasi aktual
+
+Run berikutnya `34581201562` melewati step checkout LFS dan `python -m unittest discover -s tests -v` lulus 44/44 test, termasuk test FFmpeg/FFprobe.
+
+### Batasan
+
+Keberhasilan CI Windows tidak membuktikan runtime GUI atau kebijakan jaringan PC kantor.
+
+### File terdampak
+
+- `.github/workflows/windows-watermark-creator-rc.yml`
+
+## ERR-015 - Evidence bundle Windows RC gagal karena quote Python satu baris
+
+Tanggal: 2026-09-11
+Versi: 2.7.0-rc1
+Area: Packaging | CI | Evidence
+Status: Diverifikasi
+
+### Gejala
+
+Run `34581201562` berhasil melewati 44/44 test dan PyInstaller menghasilkan `WhiteFlood_BG_Remover.exe` 243,549,392 bytes, tetapi job tetap merah pada step `Produce BIMA evidence bundle`. Step upload artifact kemudian dilewati.
+
+### Root cause
+
+Generator `evidence.md` ditulis sebagai `python -c` satu baris di dalam PowerShell YAML. Kombinasi nested quote dan f-string terpotong sehingga Python menerima string yang tidak selesai dan menghasilkan `SyntaxError: unterminated string literal`.
+
+### Solusi
+
+Pembuatan `evidence.json` dan `evidence.md` dipindahkan ke PowerShell native dengan ordered hashtable, `ConvertTo-Json`, dan here-string. Tidak ada lagi nested Python quoting untuk step evidence.
+
+### Perlindungan regresi
+
+Step upload memakai `if-no-files-found: error`; evidence generation harus berhasil sebelum artifact dapat di-upload.
+
+### Bukti verifikasi aktual
+
+Run `34583280356` selesai `success`: compile PASS, 44/44 regression test PASS, PyInstaller package PASS, BIMA evidence bundle PASS, dan artifact upload PASS. Artifact bernama `WhiteFlood-Windows-v2.7.0-rc1-83d070a5007ba87c9939ed11f07ccd3868c23305`.
+
+### Batasan
+
+GUI runtime, PC kantor, dan benchmark invisible watermark pada corpus foto nyata tetap `UNKNOWN` dan tidak boleh diklaim lulus.
+
+### File terdampak
+
+- `.github/workflows/windows-watermark-creator-rc.yml`
+- `docs/ERROR_SOLUTIONS.md`
