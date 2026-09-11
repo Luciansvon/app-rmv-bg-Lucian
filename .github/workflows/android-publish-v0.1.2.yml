@@ -1,0 +1,104 @@
+name: Publish WhiteFlood Android v0.1.2
+
+on:
+  push:
+    branches:
+      - feat/android-upscale-mvp
+    paths:
+      - '.github/workflows/android-publish-v0.1.2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  BUILD_RUN_ID: "34552294941"
+  ARTIFACT_NAME: WhiteFlood-Android-Pilot-v0.1.2
+  RELEASE_TAG: android-v0.1.2
+  RELEASE_TARGET: f3cf8cbb660890c2455d2e5454606eadf7d25c02
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout WhiteFlood
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download verified v0.1.2 build artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-input
+          gh run download "$BUILD_RUN_ID" --name "$ARTIFACT_NAME" --dir release-input
+          test -f release-input/WhiteFlood-Android-Pilot-v0.1.2.apk
+          test -f release-input/WhiteFlood-Android-Pilot-v0.1.2.sha256
+          test -f release-input/dependency-sha256.txt
+          test -f release-input/evidence.json
+          test -f release-input/evidence.md
+
+      - name: Verify APK checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd release-input
+            sed 's#  artifacts/#  #' WhiteFlood-Android-Pilot-v0.1.2.sha256 | sha256sum -c -
+          )
+          sha256sum release-input/WhiteFlood-Android-Pilot-v0.1.2.apk
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## WhiteFlood Android Pilot v0.1.2
+
+          Diagnostic/guard release untuk kegagalan upscale yang sebelumnya tertutup error `cp output.png`.
+
+          ### Perbaikan utama
+          - Preflight binary upscale lokal dan model sebelum engine dijalankan.
+          - Menghentikan export chain jika proses NCNN/RealSR gagal.
+          - Memastikan `output.png` ada dan tidak kosong sebelum disimpan.
+          - Menampilkan native process exit code dan engine log agar error asli terbaca.
+          - Mempertahankan preset lokal 2x dan 4x serta perbaikan content URI/preview dari v0.1.1.
+
+          ### Verifikasi
+          - GitHub Actions Android build: **PASS** pada run `34552294941`.
+          - B.I.M.A Shared Infra Audit: **PASS** pada run `34552295490`.
+          - Release target: `f3cf8cbb660890c2455d2e5454606eadf7d25c02`.
+          - APK checksum, dependency checksum, dan build evidence disertakan sebagai asset release.
+
+          ### Batas verifikasi
+          - CI membuktikan build dan packaging, bukan keberhasilan Vulkan/NCNN pada semua perangkat.
+          - Physical-device upscale v0.1.2 masih perlu dites.
+          - Jika engine masih gagal, v0.1.2 harus menampilkan error/exit code asli, bukan error `cp output.png` yang menyesatkan.
+          - Release tetap **pre-release** sampai flow pilih foto → preview → upscale → simpan lulus di perangkat Android fisik.
+
+          **Built by Bima Chakti**  
+          © 2026 Bima Chakti
+          EOF
+
+      - name: Publish GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to overwrite." >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            release-input/WhiteFlood-Android-Pilot-v0.1.2.apk \
+            release-input/WhiteFlood-Android-Pilot-v0.1.2.sha256 \
+            release-input/dependency-sha256.txt \
+            release-input/evidence.json \
+            release-input/evidence.md \
+            --target "$RELEASE_TARGET" \
+            --title "WhiteFlood Android Pilot v0.1.2" \
+            --notes-file release-notes.md \
+            --prerelease
