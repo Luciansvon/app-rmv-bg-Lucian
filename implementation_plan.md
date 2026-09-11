@@ -547,3 +547,42 @@ nama file secara manual.
   Asset GitHub berukuran 294.769.390 byte dengan digest
   `sha256:a556a60f5a819224c0247ce92396f4f9135b853696fbca95bcbe5174face3e6d`,
   cocok dengan artifact lokal.
+
+## 2026-09-11 - Issue #7 Hybrid Watermark Creator
+
+Status: **Disetujui eksplisit oleh Bima pada 2026-09-11** melalui instruksi `skrg build dan gunakan rule bima dev`. Implementasi dilakukan di branch `feat/issue-7-watermark-creator`; tidak merge otomatis.
+
+### Keputusan implementasi
+
+- Issue #7 diperlakukan sebagai parent feature, bukan satu patch monolitik tanpa gate.
+- Phase A `Visible Watermark Creator` boleh menjadi fitur produksi setelah regression test dan build lulus.
+- Invisible watermark tetap berstatus **experimental** sampai benchmark attack matrix menghasilkan evidence. DWT/DCT/QIM/SVD tidak dikunci hanya karena populer.
+- Creator dipisahkan dari `features/watermark/` yang sudah memiliki tanggung jawab Remove Watermark. Modul baru memakai `features/watermark_creator/` agar fitur tambah dan hapus watermark tidak tercampur.
+- Aturan lama `jangan menambahkan watermark ke output` dipersempit: tool lain tidak boleh menambahkan watermark otomatis; Watermark Creator hanya boleh mengubah output setelah tindakan eksplisit user.
+
+### Scope implementasi tahap ini
+
+1. Visible text/logo compositor: opacity, scale/font size, rotation, stroke, shadow, 9 anchor, offset, margin, single/tile/diagonal repeat dan alpha-safe composition.
+2. Preset schema versioned dan backward-safe loader untuk konfigurasi creator.
+3. Invisible experimental engine + verify API memakai payload tervalidasi/checksum hanya jika implementasi benchmark dapat diuji deterministik tanpa dependency/model berat baru.
+4. Benchmark harness untuk PNG original, JPEG 95/80, resize 90% round-trip, crop ringan, brightness/contrast ±10%, dan visible overlay.
+5. Integrasi UI sebagai workflow terpisah dari Remove Watermark; file sumber tidak pernah ditimpa diam-diam.
+6. Regression test untuk dimensi, alpha, renderer, payload/preset, collision safety, dan benchmark reporting.
+7. Windows build evidence menghasilkan EXE + SHA-256 sebagai artifact; build success tidak dianggap bukti GUI/runtime pada PC kantor.
+
+### BIMA DEV evidence contract
+
+- Source/unit/static result dan Windows packaging dicatat sebagai evidence terpisah.
+- Required check yang tidak dijalankan berstatus `UNKNOWN`/pending, tidak boleh disulap menjadi PASS.
+- Artifact build harus memiliki identity minimal: commit SHA, filename, byte size, dan SHA-256.
+- Generic GitHub-hosted Windows runner tidak membuktikan perilaku GUI, GPU/Vulkan, proxy kantor, atau media/model runtime pada PC target.
+- Tidak ada release publik atau merge otomatis hanya karena build hijau.
+
+### Acceptance gate tahap ini
+
+- `python -m py_compile` source creator dan entry point lulus.
+- Unittest creator lulus dan tidak membutuhkan download model.
+- Benchmark menghasilkan laporan terukur; algoritma invisible hanya ditandai production-ready bila threshold yang dinyatakan eksplisit terpenuhi.
+- Windows PyInstaller build lulus dan EXE ditemukan pada artifact path yang dideklarasikan.
+- SHA-256 artifact dihitung dan disimpan sebagai evidence.
+- GUI smoke/runtime yang belum dijalankan tetap ditulis pending.
